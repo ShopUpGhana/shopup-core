@@ -2,13 +2,6 @@
 (function () {
   "use strict";
 
-  // This controller handles the FULL seller registration:
-  // - Load campuses (shopup_core.campuses)
-  // - Sign up user via Supabase Auth
-  // - Create seller draft (shopup_core.sellers)
-  // - Save campus preference (shopup_core.user_profiles)
-  // - Redirect to dashboard
-
   function create({ supabase, schema, logger }) {
     const SCH = schema || "shopup_core";
 
@@ -23,8 +16,9 @@
 
     function setBusy(btn, busy, labelWhenBusy) {
       if (!btn) return;
+      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent || "Submit";
       btn.disabled = !!busy;
-      if (labelWhenBusy) btn.textContent = busy ? labelWhenBusy : btn.dataset.originalLabel || btn.textContent;
+      btn.textContent = busy ? (labelWhenBusy || "Working...") : btn.dataset.originalLabel;
     }
 
     async function loadCampuses(campusSelect, msg) {
@@ -37,7 +31,16 @@
 
       if (error) {
         logger.error("[ShopUp] loadCampuses error", error);
-        setMsg(msg, "Failed to load campuses. Please refresh.");
+
+        // Friendly message + exact fix
+        if (error.code === "PGRST106") {
+          setMsg(
+            msg,
+            'Campuses not loading because Supabase API is not exposing the "shopup_core" schema yet. Fix: Supabase → Settings → API → Exposed schemas → add "shopup_core".'
+          );
+        } else {
+          setMsg(msg, "Failed to load campuses. Please refresh.");
+        }
         return;
       }
 
@@ -53,117 +56,189 @@
       campusSelect.innerHTML = options;
     }
 
+    async function ensureSignedIn({ email, password, msg }) {
+      // 1) Try sign up
+      const { data: signupData, error: signupErr } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (!signupErr) {
+        const userId = signupData?.user?.id;
+        return { ok: true, userId, mode: "signup" };
+      }
+
+      // If already registered, fallback to login
+      const already =
+        (signupErr.message || "").toLowerCase().includes("already registered") ||
+        (signupErr.message || "").toLowerCase().includes("already exists");
+
+      if (already) {
+        setMsg(msg, "Account exists — signing you in...");
+
+        const { data: signinData, error: signinErr } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signinErr) {
+          logger.error("[ShopUp] signIn error", signinErr);
+          return {
+            ok: false,
+            error: "This email already exists. Try the correct password or use Seller Login (we’ll add it next).",
+          };
+        }
+
+        const userId = signinData?.user?.id;
+        return { ok: true, userId, mode: "signin" };
+      }
+
+      // Other signup errors
+      logger.error("[ShopUp] signup error", signupErr);
+      return { ok: false, error: signupErr.message || "Signup failed." };
+    }
+
+    async function getSellerByUserId(userId) {
+      const { data, error } = await supabase
+        .schema(SCH)
+        .from("sellers")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) {
+        logger.error("[ShopUp] getSellerByUserId error", error);
+        return null;
+      }
+      return data || null;
+    }
+
+    async function createSeller({ userId, campusId, displayName, whatsappPhone, msg }) {
+      setMsg(msg, "Creating seller profile...");
+
+      const { data, error } = await supabase
+        .schema(SCH)
+        .from("sellers")
+        .insert({
+          user_id: userId,
+          campus_id: campusId,
+          display_name: displayName,
+          whatsapp_phone: whatsappPhone || null,
+          status: "draft",
+          trust_tier: "campus_seller",
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        logger.error("[ShopUp] seller create error", error);
+
+        if (error.code === "PGRST106") {
+          return {
+            ok: false,
+            error:
+              'Supabase is not exposing "shopup_core" to the API. Fix: Supabase → Settings → API → Exposed schemas → add "shopup_core".',
+          };
+        }
+
+        return { ok: false, error: error.message || "Failed to create seller profile." };
+      }
+
+      return { ok: true, seller: data };
+    }
+
+    async function upsertUserProfile({ userId, campusId }) {
+      if (!campusId) return;
+
+      // Optional: campus preference should never block signup
+      const { error } = await supabase
+        .schema(SCH)
+        .from("user_profiles")
+        .upsert({ user_id: userId, campus_id: campusId }, { onConflict: "user_id" });
+
+      if (error) logger.warn?.("[ShopUp] user_profiles upsert failed", error);
+    }
+
     async function start() {
       const form = $id("sellerRegisterForm");
       if (!form) return;
 
       const submitBtn = $id("submitBtn");
       const msg = $id("msg");
-
-      // Optional fields (if present in your HTML)
       const campusSelect = $id("campus_id");
 
-      // Save original label
-      if (submitBtn && !submitBtn.dataset.originalLabel) {
-        submitBtn.dataset.originalLabel = submitBtn.textContent || "Create Account";
-      }
-
-      // Populate campuses if the dropdown exists
-      if (campusSelect) {
-        await loadCampuses(campusSelect, msg);
-      }
+      // Load campuses
+      if (campusSelect) await loadCampuses(campusSelect, msg);
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         setMsg(msg, "");
-
         setBusy(submitBtn, true, "Creating account...");
 
         try {
+          const displayName = ($id("display_name")?.value || "").trim();
+          const whatsappPhone = ($id("whatsapp_phone")?.value || "").trim();
+          const campusId = campusSelect ? campusSelect.value || null : null;
           const email = ($id("email")?.value || "").trim();
           const password = $id("password")?.value || "";
-          const displayName = ($id("display_name")?.value || "").trim();
-          const whatsappPhone = ($id("whatsapp_phone")?.value || "").trim() || null;
-          const campusId = campusSelect ? campusSelect.value || null : null;
 
-          if (!email || !password || !displayName) {
-            setMsg(msg, "Email, password, and shop name are required.");
+          if (!displayName || !email || !password) {
+            setMsg(msg, "Shop name, email, and password are required.");
             setBusy(submitBtn, false);
             return;
           }
 
-          // 1) Sign up
-          const { data: signupData, error: signupErr } = await supabase.auth.signUp({
-            email,
-            password,
+          // 1) ensure signed in (signup OR login)
+          const authRes = await ensureSignedIn({ email, password, msg });
+          if (!authRes.ok) {
+            setMsg(msg, authRes.error);
+            setBusy(submitBtn, false);
+            return;
+          }
+
+          const userId = authRes.userId;
+          if (!userId) {
+            setMsg(msg, "Auth succeeded but user ID missing. Check Supabase Auth settings.");
+            setBusy(submitBtn, false);
+            return;
+          }
+
+          // 2) Save profile preference (optional)
+          await upsertUserProfile({ userId, campusId });
+
+          // 3) Create seller if missing
+          setMsg(msg, "Checking seller profile...");
+          const existing = await getSellerByUserId(userId);
+
+          if (existing) {
+            try {
+              localStorage.setItem("shopup_seller_id", existing.id);
+            } catch (_) {}
+            setMsg(msg, "✅ Welcome back! Redirecting...");
+            window.location.href = "./dashboard.html";
+            return;
+          }
+
+          // Create new seller
+          const createRes = await createSeller({
+            userId,
+            campusId,
+            displayName,
+            whatsappPhone,
+            msg,
           });
 
-          if (signupErr) {
-            logger.error("[ShopUp] signup error", signupErr);
-            setMsg(msg, signupErr.message || "Signup failed.");
+          if (!createRes.ok) {
+            setMsg(msg, createRes.error);
             setBusy(submitBtn, false);
             return;
           }
 
-          const userId = signupData?.user?.id;
-          if (!userId) {
-            // Some auth setups require email confirmation; user can still be returned
-            setMsg(msg, "Signup succeeded but no user ID returned. Check auth settings.");
-            setBusy(submitBtn, false);
-            return;
-          }
-
-          // 2) Save campus preference (BOTH model) — optional
-          if (campusId) {
-            setMsg(msg, "Saving campus preference...");
-            const { error: prefErr } = await supabase
-              .schema(SCH)
-              .from("user_profiles")
-              .upsert({ user_id: userId, campus_id: campusId }, { onConflict: "user_id" });
-
-            if (prefErr) {
-              // Not fatal for seller registration; keep friction low
-              logger.warn?.("[ShopUp] campus preference save failed", prefErr);
-            }
-          }
-
-          // 3) Create seller draft
-          setMsg(msg, "Creating seller profile...");
-          const { data: sellerRow, error: sellerErr } = await supabase
-            .schema(SCH)
-            .from("sellers")
-            .insert({
-              user_id: userId,
-              campus_id: campusId,
-              display_name: displayName,
-              whatsapp_phone: whatsappPhone,
-              status: "draft",
-              trust_tier: "campus_seller",
-            })
-            .select("*")
-            .single();
-
-          if (sellerErr) {
-            logger.error("[ShopUp] seller create error", sellerErr);
-
-            // Friendly, behavior-aware messages
-            const msgText =
-              sellerErr.message?.includes("duplicate key") || sellerErr.code === "23505"
-                ? "This account already has a seller profile."
-                : sellerErr.message || "Failed to create seller profile.";
-
-            setMsg(msg, msgText);
-            setBusy(submitBtn, false);
-            return;
-          }
-
-          // 4) Success
-          setMsg(msg, "✅ Seller profile created (Draft). Redirecting...");
-          // Store seller id for dashboard convenience (not security-critical)
           try {
-            localStorage.setItem("shopup_seller_id", sellerRow.id);
+            localStorage.setItem("shopup_seller_id", createRes.seller.id);
           } catch (_) {}
 
+          setMsg(msg, "✅ Seller profile created (Draft). Redirecting...");
           window.location.href = "./dashboard.html";
         } catch (err) {
           logger.error("[ShopUp] register unexpected error", err);
