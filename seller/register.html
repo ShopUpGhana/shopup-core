@@ -1,0 +1,85 @@
+<!-- /seller/register.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ShopUp • Seller Register</title>
+    <meta name="description" content="Create your ShopUp seller profile" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 24px; background:#0b1220; color:#e8eefc; }
+      .card { max-width: 520px; margin: 0 auto; background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 18px; }
+      h1 { font-size: 20px; margin: 0 0 12px; }
+      p { margin: 0 0 16px; opacity: .85; }
+      label { display:block; font-size: 12px; margin: 12px 0 6px; opacity:.9; }
+      input, select { width: 100%; padding: 10px 12px; border-radius: 10px; border:1px solid rgba(255,255,255,.12); background:#0b1220; color:#e8eefc; }
+      button { width: 100%; margin-top: 14px; padding: 12px 14px; border-radius: 10px; border:0; background:#2d6cff; color:white; font-weight:600; cursor:pointer; }
+      button:disabled { opacity:.6; cursor:not-allowed; }
+      .msg { margin-top: 12px; font-size: 13px; }
+      .hint { font-size: 12px; opacity:.75; margin-top:8px; }
+      .row { display:flex; gap:12px; }
+      .row > div { flex:1; }
+      a { color:#8ab4ff; }
+    </style>
+  </head>
+
+  <body>
+    <div class="card">
+      <h1>Become a ShopUp Seller</h1>
+      <p>Campus-first. Low friction. Start selling in minutes.</p>
+
+      <form id="sellerRegisterForm">
+        <label for="display_name">Shop / Brand name *</label>
+        <input id="display_name" name="display_name" placeholder="e.g. Nana’s Kitchen" required />
+
+        <label for="campus_id">Campus (optional)</label>
+        <select id="campus_id" name="campus_id">
+          <option value="">Loading campuses...</option>
+        </select>
+        <div class="hint">Choose your campus to boost trust & discovery.</div>
+
+        <label for="whatsapp_phone">WhatsApp number (optional)</label>
+        <input id="whatsapp_phone" name="whatsapp_phone" placeholder="e.g. +233XXXXXXXXX" />
+
+        <div class="row">
+          <div>
+            <label for="email">Email *</label>
+            <input id="email" name="email" type="email" placeholder="you@email.com" required />
+          </div>
+          <div>
+            <label for="password">Password *</label>
+            <input id="password" name="password" type="password" placeholder="••••••••" required />
+          </div>
+        </div>
+
+        <button id="submitBtn" type="submit">Create seller account</button>
+        <div id="msg" class="msg"></div>
+      </form>
+
+      <div class="hint" style="margin-top:14px;">
+        Already have an account? (We’ll add Seller Login next.)
+      </div>
+    </div>
+
+    <!-- 1) Supabase SDK (required) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- 2) Config: you must create /js/supabase-config.js next -->
+    <script src="../js/supabase-config.js"></script>
+
+    <!-- 3) Core DI container -->
+    <script src="../js/core/container.js"></script>
+    <script src="../js/core/result.js"></script>
+
+    <!-- 4) Adapters -->
+    <script src="../js/adapters/supabaseDbAdapter.js"></script>
+    <script src="../js/adapters/supabaseSellerRepo.js"></script>
+
+    <!-- 5) App bootstrap (creates supabaseClient + schema lock) -->
+    <script src="../js/bootstrap/app.bootstrap.js"></script>
+
+    <!-- 6) Page controller + bootstrap -->
+    <script src="../js/controllers/seller-register.controller.js"></script>
+    <script src="../js/bootstrap/seller-register.bootstrap.js"></script>
+  </body>
+</html>
