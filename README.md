@@ -1,8 +1,8 @@
-# shopup-core
+# ShopUp Core
 
 ShopUp is a Ghana-first, campus-rooted e-commerce platform built initially for university students who sell informally on campus.
 
-This repository represents a complete architectural reset of ShopUp — built from scratch with clarity, modularity, and long-term scale in mind.
+This repository represents the core foundation of ShopUp — built from scratch with clarity, modularity, and long-term scale in mind.
 
 ---
 
@@ -30,12 +30,75 @@ Empower Ghanaian student sellers to formalize, grow, and scale their campus busi
 
 ## 🏗 Identity Model (Locked)
 
-- `auth.users` → human identity
-- `sellers` → commerce profile (1-to-1 with user)
-- `products`, `orders`, `payouts` → reference `sellers.id`
+- `auth.users` → human identity  
+- `sellers` → commerce profile (1-to-1 with user)  
+- `products`, `orders`, `payouts` → reference `sellers.id`  
 
 ---
 
 ## 🛤 Seller Lifecycle
 
-Status:
+### Status
+draft → pending → approved → suspended
+
+shell
+Copy code
+
+### Trust Tiers
+Campus Seller → Verified → Registered Business
+
+yaml
+Copy code
+
+---
+
+## 🧱 Architecture Philosophy
+
+ShopUp Core is built with:
+
+- Dependency Injection (DI)
+- Modular feature boundaries
+- Adapter pattern (Supabase isolated)
+- Loosely coupled services
+- Testable business logic
+- Minimal runtime dependencies
+
+No overengineering.  
+No framework bloat.  
+No Amazon cloning.  
+
+---
+
+## 🚀 Initial Pilot
+
+- Ghana university campuses
+- Student sellers
+- Campus-based discovery feed
+
+---
+
+## 📦 Project Structure (Planned)
+
+/apps
+/web
+/pages
+/assets
+/js
+/core
+/ports
+/adapters
+/features
+/controllers
+/bootstrap
+
+/supabase
+schema.sql
+rls.sql
+seed.sql
+
+yaml
+Copy code
+
+---
+
+This is ShopUp’s long-term platform foundation — not a demo project.
