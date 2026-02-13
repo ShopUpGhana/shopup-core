@@ -3,33 +3,109 @@
   "use strict";
 
   const c = window.ShopUpContainer;
+  if (!c) {
+    console.error("[ShopUp] ShopUpContainer not found. Check script order.");
+    return;
+  }
 
-  // Core
+  // -----------------------------
+  // Core (singletons)
+  // -----------------------------
   c.register("config", () => window.ShopUpConfig, { singleton: true });
   c.register("logger", () => console, { singleton: true });
 
-  // External deps wrapped
-  c.register("authAdapter", (cc) => window.ShopUpSupabaseAuthAdapter.create({
-    supabase: window.supabase, // from loaded SDK
-    config: cc.resolve("config"),
-    logger: cc.resolve("logger"),
-  }), { singleton: true });
+  // -----------------------------
+  // Supabase Client (singleton)
+  // NOTE:
+  // - window.supabase is the SDK (library)
+  // - supabaseClient below is the actual client instance
+  // -----------------------------
+  c.register(
+    "supabaseClient",
+    (cc) => {
+      const config = cc.resolve("config");
+      const logger = cc.resolve("logger");
 
-  c.register("dbAdapter", (cc) => window.ShopUpSupabaseDbAdapter.create({
-    supabase: window.supabase,
-    config: cc.resolve("config"),
-    logger: cc.resolve("logger"),
-  }), { singleton: true });
+      if (!window.supabase || !window.supabase.createClient) {
+        throw new Error(
+          "[ShopUp] Supabase SDK not loaded. Include supabase-js@2 before app.bootstrap.js"
+        );
+      }
 
-  // Services (pure business rules)
-  c.register("authService", (cc) => window.ShopUpAuthService.create({
-    authAdapter: cc.resolve("authAdapter"),
-    logger: cc.resolve("logger"),
-    role: "seller", // or "customer"
-  }));
+      const url = config?.SUPABASE_URL || config?.supabaseUrl;
+      const anonKey = config?.SUPABASE_ANON_KEY || config?.supabaseAnonKey;
 
-  c.register("sellerService", (cc) => window.ShopUpSellerService.create({
-    db: cc.resolve("dbAdapter"),
-    logger: cc.resolve("logger"),
-  }));
+      if (!url || !anonKey) {
+        logger.error("[ShopUp] Missing SUPABASE_URL / SUPABASE_ANON_KEY in ShopUpConfig", config);
+        throw new Error("[ShopUp] Missing Supabase config (URL / anon key).");
+      }
+
+      return window.supabase.createClient(url, anonKey);
+    },
+    { singleton: true }
+  );
+
+  // -----------------------------
+  // ShopUp Core schema (locked)
+  // -----------------------------
+  c.register("dbSchema", () => "shopup_core", { singleton: true });
+
+  // -----------------------------
+  // Adapters (thin wrappers)
+  // -----------------------------
+  // Auth adapter should receive the CLIENT, not the SDK library
+  c.register(
+    "authAdapter",
+    (cc) =>
+      window.ShopUpSupabaseAuthAdapter.create({
+        supabase: cc.resolve("supabaseClient"),
+        config: cc.resolve("config"),
+        logger: cc.resolve("logger"),
+      }),
+    { singleton: true }
+  );
+
+  // DB adapter uses shopup_core schema
+  c.register(
+    "dbAdapter",
+    (cc) =>
+      window.ShopUpSupabaseDbAdapter.create({
+        supabase: cc.resolve("supabaseClient"),
+        logger: cc.resolve("logger"),
+        schema: cc.resolve("dbSchema"),
+      }),
+    { singleton: true }
+  );
+
+  // Optional: Seller repo also uses shopup_core schema (if you use it anywhere)
+  if (window.ShopUpSupabaseSellerRepo && window.ShopUpSupabaseSellerRepo.create) {
+    c.register(
+      "sellerRepo",
+      (cc) =>
+        window.ShopUpSupabaseSellerRepo.create({
+          supabase: cc.resolve("supabaseClient"),
+          logger: cc.resolve("logger"),
+          schema: cc.resolve("dbSchema"),
+        }),
+      { singleton: true }
+    );
+  }
+
+  // -----------------------------
+  // Services (business logic)
+  // -----------------------------
+  c.register("authService", (cc) =>
+    window.ShopUpAuthService.create({
+      authAdapter: cc.resolve("authAdapter"),
+      logger: cc.resolve("logger"),
+      role: "seller", // seller-first (campus sellers)
+    })
+  );
+
+  c.register("sellerService", (cc) =>
+    window.ShopUpSellerService.create({
+      db: cc.resolve("dbAdapter"),
+      logger: cc.resolve("logger"),
+    })
+  );
 })();
