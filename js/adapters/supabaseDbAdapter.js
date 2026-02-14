@@ -20,33 +20,59 @@
       return data || [];
     }
 
-    async function getSellerById(id) {
+    async function upsertUserProfile(row) {
+      const { error } = await supabase
+        .schema(SCH)
+        .from("user_profiles")
+        .upsert(row, { onConflict: "user_id" });
+
+      if (error) {
+        logger.error("[DbAdapter] upsertUserProfile error", error);
+        throw error;
+      }
+      return true;
+    }
+
+    async function getSellerByUserId(userId) {
       const { data, error } = await supabase
         .schema(SCH)
         .from("sellers")
         .select("*")
-        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) {
+        logger.error("[DbAdapter] getSellerByUserId error", error);
+        throw error;
+      }
+      return data || null;
+    }
+
+    async function createSellerDraft(row) {
+      const { data, error } = await supabase
+        .schema(SCH)
+        .from("sellers")
+        .insert({
+          ...row,
+          status: "draft",
+          trust_tier: "campus_seller",
+        })
+        .select("*")
         .single();
 
       if (error) {
-        logger.error("[DbAdapter] getSellerById error", error);
-        return null;
+        logger.error("[DbAdapter] createSellerDraft error", error);
+        throw error;
       }
       return data;
     }
 
-    async function updateSellerStatus(id, status) {
-      const { error } = await supabase
-        .schema(SCH)
-        .from("sellers")
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq("id", id);
-
-      if (error) throw error;
-      return true;
-    }
-
-    return { listCampuses, getSellerById, updateSellerStatus };
+    return {
+      listCampuses,
+      upsertUserProfile,
+      getSellerByUserId,
+      createSellerDraft,
+    };
   }
 
   window.ShopUpSupabaseDbAdapter = { create };
