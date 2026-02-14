@@ -1,18 +1,38 @@
 // /js/features/seller/sellerService.js
 (function () {
-  function create({ db, logger }) {
-    async function submitForReview({ sellerId }) {
-      // enforce lifecycle
-      const seller = await db.getSellerById(sellerId);
-      if (!seller) throw new Error("Seller not found");
-      if (seller.status !== "draft") throw new Error("Only draft can be submitted");
+  "use strict";
 
-      await db.updateSellerStatus(sellerId, "pending");
-      logger.info("[Seller] Submitted for review", sellerId);
-      return { ok: true };
+  function ok(data) {
+    return { ok: true, data };
+  }
+
+  function fail(message, extra) {
+    return { ok: false, error: { message, ...(extra || {}) } };
+  }
+
+  function create({ db, logger }) {
+    async function listCampuses() {
+      try {
+        const campuses = await db.listCampuses();
+        return ok(campuses || []);
+      } catch (e) {
+        logger.error("[SellerService] listCampuses error", e);
+        return fail("Failed to load campuses.");
+      }
     }
 
-    return { submitForReview };
+    async function submitForReview({ sellerId }) {
+      if (!sellerId) return fail("Missing seller ID.");
+      try {
+        await db.updateSellerStatus(sellerId, "pending");
+        return ok(true);
+      } catch (e) {
+        logger.error("[SellerService] submitForReview error", e);
+        return fail("Could not submit. Please try again.");
+      }
+    }
+
+    return { listCampuses, submitForReview };
   }
 
   window.ShopUpSellerService = { create };
