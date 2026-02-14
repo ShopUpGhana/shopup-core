@@ -8,18 +8,11 @@
     return;
   }
 
-  // -----------------------------
   // Core (singletons)
-  // -----------------------------
   c.register("config", () => window.ShopUpConfig, { singleton: true });
   c.register("logger", () => console, { singleton: true });
 
-  // -----------------------------
   // Supabase Client (singleton)
-  // NOTE:
-  // - window.supabase is the SDK (library)
-  // - supabaseClient below is the actual client instance
-  // -----------------------------
   c.register(
     "supabaseClient",
     (cc) => {
@@ -45,27 +38,10 @@
     { singleton: true }
   );
 
-  // -----------------------------
   // ShopUp Core schema (locked)
-  // -----------------------------
   c.register("dbSchema", () => "shopup_core", { singleton: true });
 
-  // -----------------------------
-  // Adapters (thin wrappers)
-  // -----------------------------
-  // Auth adapter should receive the CLIENT, not the SDK library
-  c.register(
-    "authAdapter",
-    (cc) =>
-      window.ShopUpSupabaseAuthAdapter.create({
-        supabase: cc.resolve("supabaseClient"),
-        config: cc.resolve("config"),
-        logger: cc.resolve("logger"),
-      }),
-    { singleton: true }
-  );
-
-  // DB adapter uses shopup_core schema
+  // DB adapter (requires window.ShopUpSupabaseDbAdapter loaded)
   c.register(
     "dbAdapter",
     (cc) =>
@@ -77,35 +53,14 @@
     { singleton: true }
   );
 
-  // Optional: Seller repo also uses shopup_core schema (if you use it anywhere)
-  if (window.ShopUpSupabaseSellerRepo && window.ShopUpSupabaseSellerRepo.create) {
-    c.register(
-      "sellerRepo",
-      (cc) =>
-        window.ShopUpSupabaseSellerRepo.create({
-          supabase: cc.resolve("supabaseClient"),
-          logger: cc.resolve("logger"),
-          schema: cc.resolve("dbSchema"),
-        }),
-      { singleton: true }
-    );
-  }
-
-  // -----------------------------
-  // Services (business logic)
-  // -----------------------------
-  c.register("authService", (cc) =>
-    window.ShopUpAuthService.create({
-      authAdapter: cc.resolve("authAdapter"),
-      logger: cc.resolve("logger"),
-      role: "seller", // seller-first (campus sellers)
-    })
-  );
-
-  c.register("sellerService", (cc) =>
-    window.ShopUpSellerService.create({
-      db: cc.resolve("dbAdapter"),
-      logger: cc.resolve("logger"),
-    })
+  // SellerService (requires window.ShopUpSellerService loaded)
+  c.register(
+    "sellerService",
+    (cc) =>
+      window.ShopUpSellerService.create({
+        db: cc.resolve("dbAdapter"),
+        logger: cc.resolve("logger"),
+      }),
+    { singleton: true }
   );
 })();
