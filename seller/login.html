@@ -6,63 +6,28 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>ShopUp • Seller Login</title>
 
-    <!-- GitHub Pages base fix -->
+    <!-- ✅ IMPORTANT: GitHub Pages base fix -->
     <base href="../" />
 
     <style>
-      body {
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        margin: 0;
-        padding: 24px;
-        background: #0b1220;
-        color: #e8eefc;
-      }
-      .card {
-        max-width: 520px;
-        margin: 0 auto;
-        background: #111a2e;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
-        padding: 18px;
-      }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 24px; background:#0b1220; color:#e8eefc; }
+      .card { max-width: 520px; margin: 0 auto; background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 18px; }
       h1 { font-size: 20px; margin: 0 0 12px; }
       p { margin: 0 0 16px; opacity: .85; }
       label { display:block; font-size: 12px; margin: 12px 0 6px; opacity:.9; }
-      input {
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid rgba(255,255,255,.12);
-        background:#0b1220;
-        color:#e8eefc;
-      }
-      button {
-        width: 100%;
-        margin-top: 14px;
-        padding: 12px 14px;
-        border-radius: 10px;
-        border: 0;
-        background:#2d6cff;
-        color:white;
-        font-weight:600;
-        cursor:pointer;
-      }
+      input { width: 100%; padding: 10px 12px; border-radius: 10px; border:1px solid rgba(255,255,255,.12); background:#0b1220; color:#e8eefc; }
+      button { width: 100%; margin-top: 14px; padding: 12px 14px; border-radius: 10px; border:0; background:#2d6cff; color:white; font-weight:600; cursor:pointer; }
       button:disabled { opacity:.6; cursor:not-allowed; }
       .msg { margin-top: 12px; font-size: 13px; }
-      .hint { font-size: 12px; opacity:.75; margin-top: 10px; }
+      .hint { font-size: 12px; opacity:.75; margin-top:8px; }
       a { color:#8ab4ff; }
-      .row { display:flex; gap:10px; }
-      .row > button.secondary {
-        background: transparent;
-        border: 1px solid rgba(255,255,255,.16);
-      }
     </style>
   </head>
 
   <body>
     <div class="card">
       <h1>Seller Login</h1>
-      <p>Log in to manage your ShopUp seller account.</p>
+      <p>Welcome back. Sign in to continue.</p>
 
       <form id="sellerLoginForm">
         <label for="email">Email *</label>
@@ -71,18 +36,12 @@
         <label for="password">Password *</label>
         <input id="password" name="password" type="password" placeholder="••••••••" required />
 
-        <button id="submitBtn" type="submit">Login</button>
-
-        <div class="row" style="margin-top:10px;">
-          <button id="forgotBtn" class="secondary" type="button">Forgot password</button>
-          <button id="goRegisterBtn" class="secondary" type="button">Create account</button>
-        </div>
-
+        <button id="submitBtn" type="submit">Sign in</button>
         <div id="msg" class="msg"></div>
       </form>
 
-      <div class="hint">
-        You’ll be redirected to your dashboard after login.
+      <div class="hint" style="margin-top:14px;">
+        New seller? <a href="seller/register.html">Create an account</a>
       </div>
     </div>
 
@@ -94,22 +53,30 @@
 
     <!-- 3) Core DI -->
     <script src="js/core/container.js"></script>
+    <script src="js/core/result.js"></script>
 
-    <!-- 4) App bootstrap (creates supabaseClient) -->
+    <!-- 4) Adapters + services -->
+    <script src="js/adapters/supabaseDbAdapter.js"></script>
+    <script src="js/adapters/supabaseAuthAdapter.js"></script>
+    <script src="js/features/seller/sellerService.js"></script>
+    <script src="js/features/auth/authService.js"></script>
+
+    <!-- 5) App bootstrap -->
     <script src="js/bootstrap/app.bootstrap.js"></script>
 
-    <!-- 5) Controller + bootstrap -->
+    <!-- 6) Controller + page bootstrap -->
     <script src="js/controllers/seller-login.controller.js"></script>
     <script src="js/bootstrap/seller-login.bootstrap.js"></script>
 
     <!-- Loader sanity check -->
     <script>
-      console.log("[ShopUp] Loaded objects (login):", {
+      console.log("[ShopUp] Loaded objects:", {
         ShopUpContainer: !!window.ShopUpContainer,
         ShopUpConfig: !!window.ShopUpConfig,
+        ShopUpSupabaseAuthAdapter: !!window.ShopUpSupabaseAuthAdapter,
+        ShopUpAuthService: !!window.ShopUpAuthService,
         supabaseSDK: !!window.supabase,
       });
     </script>
   </body>
 </html>
-
