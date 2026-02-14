@@ -8,11 +8,8 @@
     return;
   }
 
-  // Ensure supabase client is available from app.bootstrap.js
-  c.register("supabaseClient", (cc) => cc.resolve("supabaseClient"), { singleton: true });
   c.register("logger", () => console, { singleton: true });
 
-  // Controller
   c.register(
     "sellerLoginController",
     (cc) =>
@@ -23,6 +20,5 @@
     { singleton: true }
   );
 
-  // Start
   c.resolve("sellerLoginController").start();
 })();
