@@ -2,42 +2,51 @@
 (function () {
   "use strict";
 
-  const DEFAULT_SCHEMA = "shopup_core";
-
   function create({ supabase, logger, schema }) {
-    const sch = schema || DEFAULT_SCHEMA;
+    const SCH = schema || "shopup_core";
 
-    function table(name) {
-      // Supabase v2 supports schema() to target a non-public schema
-      return supabase.schema(sch).from(name);
+    async function listCampuses() {
+      const { data, error } = await supabase
+        .schema(SCH)
+        .from("campuses")
+        .select("id,name,city")
+        .eq("is_active", true)
+        .order("name");
+
+      if (error) {
+        logger.error("[DbAdapter] listCampuses error", error);
+        throw error;
+      }
+      return data || [];
     }
 
     async function getSellerById(id) {
-      const { data, error } = await table("sellers")
+      const { data, error } = await supabase
+        .schema(SCH)
+        .from("sellers")
         .select("*")
         .eq("id", id)
         .single();
 
       if (error) {
-        logger.error("[supabaseDbAdapter] getSellerById error", error);
+        logger.error("[DbAdapter] getSellerById error", error);
         return null;
       }
       return data;
     }
 
     async function updateSellerStatus(id, status) {
-      const { error } = await table("sellers")
+      const { error } = await supabase
+        .schema(SCH)
+        .from("sellers")
         .update({ status, updated_at: new Date().toISOString() })
         .eq("id", id);
 
-      if (error) {
-        logger.error("[supabaseDbAdapter] updateSellerStatus error", error);
-        throw error;
-      }
+      if (error) throw error;
       return true;
     }
 
-    return { getSellerById, updateSellerStatus };
+    return { listCampuses, getSellerById, updateSellerStatus };
   }
 
   window.ShopUpSupabaseDbAdapter = { create };
