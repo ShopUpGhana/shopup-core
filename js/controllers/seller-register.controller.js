@@ -3,13 +3,22 @@
   "use strict";
 
   function create({ sellerService, logger }) {
+    function ghPagesSellerDashboardUrl() {
+      // Works on:
+      // - https://shopupghana.github.io/shopup-core/seller/register.html
+      // - local/dev
+      // Avoids <base href="../"> side effects
+      const path = window.location.pathname || "";
+      const isGhPages = /\/shopup-core\//.test(path);
+      return isGhPages ? "/shopup-core/seller/dashboard.html" : "/seller/dashboard.html";
+    }
+
     async function loadCampusesIntoDropdown() {
       const campusSelect = document.querySelector("#campus_id");
       logger.log("[ShopUp] campus select found?", !!campusSelect, campusSelect);
 
       if (!campusSelect) return;
 
-      // Default loading state
       campusSelect.innerHTML = `<option value="">Loading campuses...</option>`;
 
       const res = await sellerService.listCampuses();
@@ -21,13 +30,11 @@
       }
 
       const campuses = res.data || [];
-
       if (!campuses.length) {
         campusSelect.innerHTML = `<option value="">No campuses found</option>`;
         return;
       }
 
-      // Build options
       const options = [
         `<option value="">Select campus (optional)</option>`,
         ...campuses.map((c) => {
@@ -49,7 +56,6 @@
         return;
       }
 
-      // Load campuses at startup
       loadCampusesIntoDropdown().catch((err) => {
         logger.error("[ShopUp] loadCampusesIntoDropdown error", err);
         const campusSelect = document.querySelector("#campus_id");
@@ -101,8 +107,8 @@
 
           if (msg) msg.textContent = "✅ Account created. Redirecting…";
 
-          // ✅ Correct redirect: dashboard is inside /seller/
-          window.location.href = "./dashboard.html";
+          // ✅ Bulletproof redirect for GitHub Pages + base href
+          window.location.href = ghPagesSellerDashboardUrl();
         } catch (err) {
           logger.error("[ShopUp] register submit error", err);
           if (msg) msg.textContent = "Something went wrong. Please try again.";
