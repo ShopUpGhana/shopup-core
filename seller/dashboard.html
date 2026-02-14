@@ -1,297 +1,82 @@
-<!-- /seller/dashboard.html -->
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>ShopUp • Seller Dashboard</title>
+// /js/controllers/seller-login.controller.js
+(function () {
+  "use strict";
 
-    <base href="../" />
+  function create({ authService, logger }) {
+    function isGhPages() {
+      return /\/shopup-core\//.test(window.location.pathname || "");
+    }
 
-    <style>
-      body {
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        margin: 0;
-        padding: 24px;
-        background: #0b1220;
-        color: #e8eefc;
-      }
-      .wrap { max-width: 900px; margin: 0 auto; }
-      .card {
-        background: #111a2e;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
-        padding: 18px;
-        margin-bottom: 14px;
-      }
-      h1 { margin: 0 0 10px; font-size: 20px; }
-      .row { display: flex; gap: 12px; flex-wrap: wrap; }
-      .pill {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        opacity: 0.95;
-      }
-      .muted { opacity: .8; }
-      button {
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 0;
-        background: #2d6cff;
-        color: white;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      button.secondary {
-        background: transparent;
-        border: 1px solid rgba(255,255,255,.16);
-      }
-      button:disabled { opacity:.6; cursor:not-allowed; }
-      .msg { margin-top: 10px; font-size: 13px; }
-      code { opacity: .9; }
-      a { color: #8ab4ff; }
-      label { display:block; font-size: 12px; margin: 12px 0 6px; opacity:.9; }
-      input {
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid rgba(255,255,255,.12);
-        background: #0b1220;
-        color: #e8eefc;
-      }
-      .grid2 { display:grid; grid-template-columns: 2fr 1fr; gap:12px; }
-      .list { display:flex; flex-direction:column; gap:10px; margin-top:12px; }
-      .item {
-        display:flex; gap:12px; align-items:center;
-        border: 1px solid rgba(255,255,255,.08);
-        background: rgba(0,0,0,.12);
-        border-radius: 12px;
-        padding: 12px;
-      }
-    </style>
-  </head>
+    // ✅ base-safe URL (works even with <base href="../" />)
+    function dashboardUrl() {
+      return isGhPages() ? "/shopup-core/seller/dashboard.html" : "/seller/dashboard.html";
+    }
 
-  <body>
-    <div class="wrap">
-      <div class="card">
-        <div class="row" style="justify-content:space-between;align-items:center;">
-          <h1>Seller Dashboard</h1>
-          <div class="row">
-            <button id="logoutBtn" class="secondary" type="button">Logout</button>
-          </div>
-        </div>
+    async function redirectIfLoggedIn() {
+      try {
+        const res = await authService.session();
+        const session = res?.data?.session;
 
-        <div id="statusPills" class="row" style="margin-top:10px;"></div>
-        <div id="msg" class="msg muted">Loading your profile…</div>
-      </div>
-
-      <div class="card">
-        <h1>Account</h1>
-        <div class="muted">Email</div>
-        <div id="emailVal">—</div>
-
-        <div style="height:10px;"></div>
-
-        <div class="muted">User ID</div>
-        <div><code id="userIdVal">—</code></div>
-      </div>
-
-      <div class="card">
-        <h1>Seller Profile</h1>
-
-        <div class="muted">Shop / Brand name</div>
-        <div id="displayNameVal">—</div>
-
-        <div style="height:10px;"></div>
-
-        <div class="muted">Campus</div>
-        <div id="campusVal">—</div>
-
-        <div style="height:10px;"></div>
-
-        <div class="muted">WhatsApp</div>
-        <div id="whatsappVal">—</div>
-      </div>
-
-      <!-- ✅ NEW: My Products -->
-      <div class="card">
-        <h1>My Products</h1>
-        <div class="muted">Create a product (draft) and see it in your list.</div>
-
-        <form id="productCreateForm" style="margin-top:12px;">
-          <div class="grid2">
-            <div>
-              <label for="product_name">Product name *</label>
-              <input id="product_name" name="product_name" placeholder="e.g. Fresh Plantain Chips" required />
-            </div>
-            <div>
-              <label for="product_price">Price (GHS) *</label>
-              <input id="product_price" name="product_price" type="number" min="0" step="0.01" placeholder="e.g. 25" required />
-            </div>
-          </div>
-
-          <button id="productSubmitBtn" type="submit" style="margin-top:12px;">Create product</button>
-          <div id="productMsg" class="msg"></div>
-        </form>
-
-        <div id="productList" class="list"></div>
-      </div>
-
-      <div class="card">
-        <h1>Next modules</h1>
-        <ul>
-          <li>Campus discovery feed</li>
-          <li>Product edit + images</li>
-          <li>Orders + payouts</li>
-        </ul>
-        <div class="muted">
-          Tip: If you get logged out, go to <a href="seller/login.html">Seller Login</a>.
-        </div>
-      </div>
-    </div>
-
-    <!-- 1) Supabase SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-    <!-- 2) Config -->
-    <script src="js/supabase-config.js"></script>
-
-    <!-- 3) Core DI -->
-    <script src="js/core/container.js"></script>
-    <script src="js/core/result.js"></script>
-
-    <!-- 4) Adapters + services -->
-    <script src="js/adapters/supabaseDbAdapter.js"></script>
-    <script src="js/adapters/supabaseAuthAdapter.js"></script>
-    <script src="js/adapters/supabaseProductRepo.js"></script>
-
-    <script src="js/features/seller/sellerService.js"></script>
-    <script src="js/features/auth/authService.js"></script>
-    <script src="js/features/product/productService.js"></script>
-
-    <!-- 5) App bootstrap -->
-    <script src="js/bootstrap/app.bootstrap.js"></script>
-
-    <!-- 6) Controllers -->
-    <script src="js/controllers/seller-products.controller.js"></script>
-    <script src="js/bootstrap/seller-dashboard.bootstrap.js"></script>
-
-    <!-- ✅ keep dashboard loader inline (session guard + profile view) -->
-    <script>
-      (function () {
-        "use strict";
-
-        const msg = document.querySelector("#msg");
-        const logoutBtn = document.querySelector("#logoutBtn");
-
-        const emailVal = document.querySelector("#emailVal");
-        const userIdVal = document.querySelector("#userIdVal");
-        const displayNameVal = document.querySelector("#displayNameVal");
-        const campusVal = document.querySelector("#campusVal");
-        const whatsappVal = document.querySelector("#whatsappVal");
-        const statusPills = document.querySelector("#statusPills");
-
-        function loginUrl() {
-          return "./login.html";
+        if (session && session.user) {
+          window.location.href = dashboardUrl();
+          return true;
         }
+        return false;
+      } catch (e) {
+        logger.error("[ShopUp] redirectIfLoggedIn error", e);
+        return false;
+      }
+    }
 
-        function pill(text) {
-          const el = document.createElement("span");
-          el.className = "pill";
-          el.textContent = text;
-          return el;
-        }
+    function start() {
+      // If already logged in → go dashboard
+      redirectIfLoggedIn();
 
-        async function main() {
-          const c = window.ShopUpContainer;
-          const client = c.resolve("supabaseClient");
-          const authService = c.resolve("authService");
+      const form = document.querySelector("#sellerLoginForm");
+      const submitBtn = document.querySelector("#submitBtn");
+      const msg = document.querySelector("#msg");
 
-          // Session guard
-          const sess = await authService.session();
-          const session = sess?.data?.session;
+      if (!form) {
+        logger.error("[ShopUp] #sellerLoginForm not found.");
+        return;
+      }
 
-          if (!session || !session.user) {
-            msg.textContent = "Not logged in. Redirecting to login…";
-            window.location.href = loginUrl();
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (submitBtn) submitBtn.disabled = true;
+        if (msg) msg.textContent = "Signing in…";
+
+        try {
+          const formData = new FormData(form);
+          const email = String(formData.get("email") || "").trim();
+          const password = String(formData.get("password") || "");
+
+          if (!email || !password) {
+            if (msg) msg.textContent = "Email and password are required.";
+            if (submitBtn) submitBtn.disabled = false;
             return;
           }
 
-          const user = session.user;
-          emailVal.textContent = user.email || "—";
-          userIdVal.textContent = user.id;
+          const res = await authService.login({ email, password });
 
-          // Load seller row
-          const { data: seller, error: sellerErr } = await client
-            .schema("shopup_core")
-            .from("sellers")
-            .select("id,user_id,display_name,status,trust_tier,whatsapp_phone,campus_id,created_at")
-            .eq("user_id", user.id)
-            .maybeSingle();
-
-          if (sellerErr) {
-            console.error(sellerErr);
-            msg.textContent = "Could not load seller profile (RLS/permissions?).";
+          if (!res || !res.ok) {
+            if (msg) msg.textContent = res?.error?.message || "Login failed.";
+            if (submitBtn) submitBtn.disabled = false;
             return;
           }
 
-          if (!seller) {
-            msg.textContent = "No seller profile found for this account yet.";
-            return;
-          }
-
-          displayNameVal.textContent = seller.display_name || "—";
-          whatsappVal.textContent = seller.whatsapp_phone || "—";
-
-          // Load campus name (optional)
-          let campusName = "—";
-          if (seller.campus_id) {
-            const { data: campus, error: campusErr } = await client
-              .schema("shopup_core")
-              .from("campuses")
-              .select("id,name,city")
-              .eq("id", seller.campus_id)
-              .maybeSingle();
-
-            if (!campusErr && campus) {
-              campusName = campus.city ? `${campus.name} — ${campus.city}` : campus.name;
-            }
-          }
-          campusVal.textContent = campusName;
-
-          // Pills
-          statusPills.innerHTML = "";
-          statusPills.appendChild(pill(`Status: ${seller.status || "—"}`));
-          statusPills.appendChild(pill(`Trust: ${seller.trust_tier || "—"}`));
-
-          msg.textContent = "✅ Loaded.";
+          if (msg) msg.textContent = "✅ Logged in. Redirecting…";
+          window.location.href = dashboardUrl();
+        } catch (err) {
+          logger.error("[ShopUp] login submit error", err);
+          if (msg) msg.textContent = "Something went wrong. Please try again.";
+          if (submitBtn) submitBtn.disabled = false;
         }
+      });
+    }
 
-        logoutBtn.addEventListener("click", async () => {
-          try {
-            const authService = window.ShopUpContainer.resolve("authService");
-            const res = await authService.logout();
+    return { start };
+  }
 
-            if (!res || !res.ok) {
-              msg.textContent = res?.error?.message || "Logout failed. Try again.";
-              return;
-            }
-
-            msg.textContent = "Logged out. Redirecting…";
-            window.location.href = loginUrl();
-          } catch (e) {
-            console.error(e);
-            msg.textContent = "Logout failed. Try again.";
-          }
-        });
-
-        main().catch((e) => {
-          console.error(e);
-          msg.textContent = "Something went wrong loading dashboard.";
-        });
-      })();
-    </script>
-  </body>
-</html>
+  window.ShopUpSellerLoginController = { create };
+})();
