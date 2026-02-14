@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>ShopUp • Seller Dashboard</title>
 
-    <!-- GitHub Pages base fix -->
     <base href="../" />
 
     <style>
@@ -17,10 +16,7 @@
         background: #0b1220;
         color: #e8eefc;
       }
-      .wrap {
-        max-width: 780px;
-        margin: 0 auto;
-      }
+      .wrap { max-width: 900px; margin: 0 auto; }
       .card {
         background: #111a2e;
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -28,15 +24,8 @@
         padding: 18px;
         margin-bottom: 14px;
       }
-      h1 {
-        margin: 0 0 10px;
-        font-size: 20px;
-      }
-      .row {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-      }
+      h1 { margin: 0 0 10px; font-size: 20px; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
       .pill {
         display: inline-block;
         padding: 6px 10px;
@@ -59,9 +48,28 @@
         background: transparent;
         border: 1px solid rgba(255,255,255,.16);
       }
+      button:disabled { opacity:.6; cursor:not-allowed; }
       .msg { margin-top: 10px; font-size: 13px; }
       code { opacity: .9; }
       a { color: #8ab4ff; }
+      label { display:block; font-size: 12px; margin: 12px 0 6px; opacity:.9; }
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: #0b1220;
+        color: #e8eefc;
+      }
+      .grid2 { display:grid; grid-template-columns: 2fr 1fr; gap:12px; }
+      .list { display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+      .item {
+        display:flex; gap:12px; align-items:center;
+        border: 1px solid rgba(255,255,255,.08);
+        background: rgba(0,0,0,.12);
+        border-radius: 12px;
+        padding: 12px;
+      }
     </style>
   </head>
 
@@ -74,6 +82,7 @@
             <button id="logoutBtn" class="secondary" type="button">Logout</button>
           </div>
         </div>
+
         <div id="statusPills" class="row" style="margin-top:10px;"></div>
         <div id="msg" class="msg muted">Loading your profile…</div>
       </div>
@@ -106,15 +115,39 @@
         <div id="whatsappVal">—</div>
       </div>
 
+      <!-- ✅ NEW: My Products -->
+      <div class="card">
+        <h1>My Products</h1>
+        <div class="muted">Create a product (draft) and see it in your list.</div>
+
+        <form id="productCreateForm" style="margin-top:12px;">
+          <div class="grid2">
+            <div>
+              <label for="product_name">Product name *</label>
+              <input id="product_name" name="product_name" placeholder="e.g. Fresh Plantain Chips" required />
+            </div>
+            <div>
+              <label for="product_price">Price (GHS) *</label>
+              <input id="product_price" name="product_price" type="number" min="0" step="0.01" placeholder="e.g. 25" required />
+            </div>
+          </div>
+
+          <button id="productSubmitBtn" type="submit" style="margin-top:12px;">Create product</button>
+          <div id="productMsg" class="msg"></div>
+        </form>
+
+        <div id="productList" class="list"></div>
+      </div>
+
       <div class="card">
         <h1>Next modules</h1>
         <ul>
-          <li>Seller login page + session guard</li>
           <li>Campus discovery feed</li>
-          <li>Product create/list</li>
+          <li>Product edit + images</li>
+          <li>Orders + payouts</li>
         </ul>
         <div class="muted">
-          Tip: if you see “Not logged in”, go to <a href="seller/login.html">Seller Login</a>.
+          Tip: If you get logged out, go to <a href="seller/login.html">Seller Login</a>.
         </div>
       </div>
     </div>
@@ -132,12 +165,20 @@
     <!-- 4) Adapters + services -->
     <script src="js/adapters/supabaseDbAdapter.js"></script>
     <script src="js/adapters/supabaseAuthAdapter.js"></script>
+    <script src="js/adapters/supabaseProductRepo.js"></script>
+
     <script src="js/features/seller/sellerService.js"></script>
     <script src="js/features/auth/authService.js"></script>
+    <script src="js/features/product/productService.js"></script>
 
     <!-- 5) App bootstrap -->
     <script src="js/bootstrap/app.bootstrap.js"></script>
 
+    <!-- 6) Controllers -->
+    <script src="js/controllers/seller-products.controller.js"></script>
+    <script src="js/bootstrap/seller-dashboard.bootstrap.js"></script>
+
+    <!-- ✅ keep dashboard loader inline (session guard + profile view) -->
     <script>
       (function () {
         "use strict";
@@ -153,7 +194,6 @@
         const statusPills = document.querySelector("#statusPills");
 
         function loginUrl() {
-          // Always stay inside /seller/
           return "./login.html";
         }
 
@@ -169,7 +209,7 @@
           const client = c.resolve("supabaseClient");
           const authService = c.resolve("authService");
 
-          // 1) Session guard (via authService)
+          // Session guard
           const sess = await authService.session();
           const session = sess?.data?.session;
 
@@ -183,7 +223,7 @@
           emailVal.textContent = user.email || "—";
           userIdVal.textContent = user.id;
 
-          // 2) Load seller row (shopup_core.sellers) by user_id
+          // Load seller row
           const { data: seller, error: sellerErr } = await client
             .schema("shopup_core")
             .from("sellers")
@@ -205,7 +245,7 @@
           displayNameVal.textContent = seller.display_name || "—";
           whatsappVal.textContent = seller.whatsapp_phone || "—";
 
-          // 3) Load campus name (optional)
+          // Load campus name (optional)
           let campusName = "—";
           if (seller.campus_id) {
             const { data: campus, error: campusErr } = await client
@@ -221,7 +261,7 @@
           }
           campusVal.textContent = campusName;
 
-          // 4) Status pills
+          // Pills
           statusPills.innerHTML = "";
           statusPills.appendChild(pill(`Status: ${seller.status || "—"}`));
           statusPills.appendChild(pill(`Trust: ${seller.trust_tier || "—"}`));
