@@ -9,37 +9,28 @@
 
     async function waitForDomReady() {
       if (document.readyState === "complete" || document.readyState === "interactive") return;
-      await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
-    }
-
-    function findCampusSelect() {
-      // Most likely IDs / names
-      return (
-        document.getElementById("campus_id") ||
-        document.getElementById("campusSelect") ||
-        document.querySelector('select[name="campus_id"]') ||
-        document.querySelector("[data-campus-select]") ||
-        null
+      await new Promise((resolve) =>
+        document.addEventListener("DOMContentLoaded", resolve, { once: true })
       );
     }
 
     function findMsgEl() {
+      return document.getElementById("msg") || document.querySelector("#msg") || null;
+    }
+
+    function setMsg(el, text) {
+      if (el) el.textContent = text || "";
+    }
+
+    function findCampusSelect() {
       return (
-        document.getElementById("msg") ||
-        document.querySelector("#msg") ||
-        document.querySelector("[data-msg]") ||
+        document.getElementById("campus_id") ||
+        document.querySelector('select[name="campus_id"]') ||
         null
       );
     }
 
-    function setMsg(el, text) {
-      if (!el) return;
-      el.textContent = text || "";
-    }
-
-    function setOptions(selectEl, campuses) {
-      if (!selectEl) return;
-
+    function setCampusOptions(selectEl, campuses) {
       const html =
         `<option value="">Select campus (optional)</option>` +
         campuses
@@ -56,9 +47,9 @@
       const msg = findMsgEl();
       setMsg(msg, "Loading campuses...");
 
-      // Sometimes scripts run before elements exist (especially if not using defer)
+      // Wait a moment for elements if scripts execute early
       let campusSelect = findCampusSelect();
-      for (let i = 0; i < 20 && !campusSelect; i++) {
+      for (let i = 0; i < 30 && !campusSelect; i++) {
         await sleep(50);
         campusSelect = findCampusSelect();
       }
@@ -67,28 +58,25 @@
 
       if (!campusSelect) {
         setMsg(msg, "Campus dropdown not found in HTML.");
-        logger.warn(
-          "[ShopUp] Add a <select id='campus_id' name='campus_id'></select> to register.html"
-        );
         return;
       }
 
       const res = await sellerService.listCampuses();
-
-      logger.log("[ShopUp] campuses response:", res);
+      logger.log("[ShopUp] listCampuses result:", res);
 
       if (!res.ok) {
         setMsg(msg, res.error?.message || "Failed to load campuses. Please refresh.");
         return;
       }
 
-      setOptions(campusSelect, res.data || []);
+      setCampusOptions(campusSelect, res.data || []);
       setMsg(msg, "");
     }
 
     async function start() {
       await waitForDomReady();
       await loadCampusesIntoDropdown();
+      // Next step after campuses work: signup/login + create seller profile (we’ll add right after)
     }
 
     return { start };
