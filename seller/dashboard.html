@@ -127,8 +127,15 @@
 
     <!-- 3) Core DI -->
     <script src="js/core/container.js"></script>
+    <script src="js/core/result.js"></script>
 
-    <!-- 4) App bootstrap (creates supabaseClient) -->
+    <!-- 4) Adapters + services -->
+    <script src="js/adapters/supabaseDbAdapter.js"></script>
+    <script src="js/adapters/supabaseAuthAdapter.js"></script>
+    <script src="js/features/seller/sellerService.js"></script>
+    <script src="js/features/auth/authService.js"></script>
+
+    <!-- 5) App bootstrap -->
     <script src="js/bootstrap/app.bootstrap.js"></script>
 
     <script>
@@ -145,10 +152,9 @@
         const whatsappVal = document.querySelector("#whatsappVal");
         const statusPills = document.querySelector("#statusPills");
 
-        function ghPagesLoginUrl() {
-          const path = window.location.pathname || "";
-          const isGhPages = /\/shopup-core\//.test(path);
-          return isGhPages ? "/shopup-core/seller/login.html" : "/seller/login.html";
+        function loginUrl() {
+          // Always stay inside /seller/
+          return "./login.html";
         }
 
         function pill(text) {
@@ -161,22 +167,23 @@
         async function main() {
           const c = window.ShopUpContainer;
           const client = c.resolve("supabaseClient");
+          const authService = c.resolve("authService");
 
-          // 1) Session guard
-          const { data: { user }, error: userErr } = await client.auth.getUser();
-          if (userErr) console.error(userErr);
+          // 1) Session guard (via authService)
+          const sess = await authService.session();
+          const session = sess?.data?.session;
 
-          if (!user) {
+          if (!session || !session.user) {
             msg.textContent = "Not logged in. Redirecting to login…";
-            window.location.href = ghPagesLoginUrl();
+            window.location.href = loginUrl();
             return;
           }
 
+          const user = session.user;
           emailVal.textContent = user.email || "—";
           userIdVal.textContent = user.id;
 
-          // 2) Load seller row (shopup_core.sellers)
-          // We assume sellers.user_id references auth.users(id)
+          // 2) Load seller row (shopup_core.sellers) by user_id
           const { data: seller, error: sellerErr } = await client
             .schema("shopup_core")
             .from("sellers")
@@ -224,10 +231,16 @@
 
         logoutBtn.addEventListener("click", async () => {
           try {
-            const client = window.ShopUpContainer.resolve("supabaseClient");
-            await client.auth.signOut();
+            const authService = window.ShopUpContainer.resolve("authService");
+            const res = await authService.logout();
+
+            if (!res || !res.ok) {
+              msg.textContent = res?.error?.message || "Logout failed. Try again.";
+              return;
+            }
+
             msg.textContent = "Logged out. Redirecting…";
-            window.location.href = ghPagesLoginUrl();
+            window.location.href = loginUrl();
           } catch (e) {
             console.error(e);
             msg.textContent = "Logout failed. Try again.";
