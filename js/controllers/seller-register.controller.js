@@ -3,100 +3,110 @@
   "use strict";
 
   function create({ sellerService, logger }) {
-    function $(id) {
-      return document.getElementById(id);
-    }
+    async function loadCampusesIntoDropdown() {
+      const campusSelect = document.querySelector("#campus_id");
+      logger.log("[ShopUp] campus select found?", !!campusSelect, campusSelect);
 
-    function setMsg(text) {
-      const el = $("msg");
-      if (el) el.textContent = text || "";
-    }
+      if (!campusSelect) return;
 
-    function setBusy(busy, label) {
-      const btn = $("submitBtn");
-      if (!btn) return;
-      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent || "Submit";
-      btn.disabled = !!busy;
-      btn.textContent = busy ? (label || "Working...") : btn.dataset.originalLabel;
-    }
+      // Default loading state
+      campusSelect.innerHTML = `<option value="">Loading campuses...</option>`;
 
-    function setCampuses(campuses) {
-      const sel = $("campus_id");
-      if (!sel) return;
+      const res = await sellerService.listCampuses();
+      logger.log("[ShopUp] listCampuses result:", res);
 
-      const html =
-        `<option value="">Select campus (optional)</option>` +
-        campuses
-          .map((c) => {
-            const label = c.city ? `${c.name} — ${c.city}` : c.name;
-            return `<option value="${c.id}">${label}</option>`;
-          })
-          .join("");
-
-      sel.innerHTML = html;
-    }
-
-    async function start() {
-      // Load campuses
-      const campusRes = await sellerService.listCampuses();
-      logger.log("[ShopUp] listCampuses result:", campusRes);
-
-      if (campusRes.ok) {
-        setCampuses(campusRes.data || []);
-        setMsg("");
-      } else {
-        setMsg(campusRes.error?.message || "Failed to load campuses.");
+      if (!res || !res.ok) {
+        campusSelect.innerHTML = `<option value="">Failed to load campuses</option>`;
+        return;
       }
 
-      // Register submit
-      const form = $("sellerRegisterForm");
-      if (!form) return;
+      const campuses = res.data || [];
+
+      if (!campuses.length) {
+        campusSelect.innerHTML = `<option value="">No campuses found</option>`;
+        return;
+      }
+
+      // Build options
+      const options = [
+        `<option value="">Select campus (optional)</option>`,
+        ...campuses.map((c) => {
+          const label = c.city ? `${c.name} — ${c.city}` : c.name;
+          return `<option value="${c.id}">${label}</option>`;
+        }),
+      ];
+
+      campusSelect.innerHTML = options.join("");
+    }
+
+    function start() {
+      const form = document.querySelector("#sellerRegisterForm");
+      const submitBtn = document.querySelector("#submitBtn");
+      const msg = document.querySelector("#msg");
+
+      if (!form) {
+        logger.error("[ShopUp] #sellerRegisterForm not found.");
+        return;
+      }
+
+      // Load campuses at startup
+      loadCampusesIntoDropdown().catch((err) => {
+        logger.error("[ShopUp] loadCampusesIntoDropdown error", err);
+        const campusSelect = document.querySelector("#campus_id");
+        if (campusSelect) campusSelect.innerHTML = `<option value="">Failed to load campuses</option>`;
+      });
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        setMsg("");
-        setBusy(true, "Creating account...");
+
+        if (submitBtn) submitBtn.disabled = true;
+        if (msg) msg.textContent = "Creating account...";
 
         try {
-          const displayName = ($("display_name")?.value || "").trim();
-          const whatsappPhone = ($("whatsapp_phone")?.value || "").trim();
-          const campusId = $("campus_id")?.value || null;
-          const email = ($("email")?.value || "").trim();
-          const password = $("password")?.value || "";
+          const formData = new FormData(form);
 
-          if (!displayName || !email || !password) {
-            setMsg("Shop name, email, and password are required.");
-            setBusy(false);
+          const payload = {
+            display_name: String(formData.get("display_name") || "").trim(),
+            campus_id: String(formData.get("campus_id") || "").trim() || null,
+            whatsapp_phone: String(formData.get("whatsapp_phone") || "").trim() || null,
+            email: String(formData.get("email") || "").trim(),
+            password: String(formData.get("password") || ""),
+          };
+
+          // Basic UX-friendly validation
+          if (!payload.display_name) {
+            if (msg) msg.textContent = "Shop/Brand name is required.";
+            if (submitBtn) submitBtn.disabled = false;
+            return;
+          }
+          if (!payload.email) {
+            if (msg) msg.textContent = "Email is required.";
+            if (submitBtn) submitBtn.disabled = false;
+            return;
+          }
+          if (!payload.password || payload.password.length < 6) {
+            if (msg) msg.textContent = "Password must be at least 6 characters.";
+            if (submitBtn) submitBtn.disabled = false;
             return;
           }
 
-          const res = await sellerService.registerSeller({
-            email,
-            password,
-            displayName,
-            whatsappPhone,
-            campusId,
-          });
+          const res = await sellerService.registerSeller(payload);
 
-          if (!res.ok) {
-            setMsg(res.error?.message || "Registration failed.");
-            setBusy(false);
+          if (!res || !res.ok) {
+            const friendly = res?.error?.message || "Something went wrong. Please try again.";
+            if (msg) msg.textContent = friendly;
+            if (submitBtn) submitBtn.disabled = false;
             return;
           }
 
-          const sellerId = res.data?.seller?.id;
-          if (sellerId) {
-            try {
-              localStorage.setItem("shopup_seller_id", sellerId);
-            } catch (_) {}
-          }
+          if (msg) msg.textContent = "✅ Account created. Redirecting…";
 
-          setMsg("✅ Done! Redirecting...");
+          // ✅ Correct redirect: dashboard is inside /seller/
           window.location.href = "./dashboard.html";
         } catch (err) {
           logger.error("[ShopUp] register submit error", err);
-          setMsg("Something went wrong. Please try again.");
-          setBusy(false);
+          if (msg) msg.textContent = "Something went wrong. Please try again.";
+          if (submitBtn) submitBtn.disabled = false;
         }
       });
     }
