@@ -8,18 +8,20 @@
     return;
   }
 
-  // Ensure app.bootstrap.js ran first (creates supabaseClient, authService, dbAdapter, etc.)
-  // We only add page-specific controller wiring here.
+  // We rely on app.bootstrap.js to register:
+  // - logger
+  // - sellerService
+  // - supabaseClient
+  // - dbAdapter
+  // - dbSchema
+  // This file is page-specific: it wires the controller and starts it.
 
-  // Page controller (seller register)
   c.register(
     "sellerRegisterController",
     (cc) =>
       window.ShopUpSellerRegisterController.create({
-        supabase: cc.resolve("supabaseClient"),
-        schema: cc.resolve("dbSchema"), // "shopup_core"
+        sellerService: cc.resolve("sellerService"),
         logger: cc.resolve("logger"),
-        config: cc.resolve("config"),
       }),
     { singleton: true }
   );
