@@ -22,4 +22,3 @@
   // Start
   c.resolve("sellerProductsController").start();
 })();
-
