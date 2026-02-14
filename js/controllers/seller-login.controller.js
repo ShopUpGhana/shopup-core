@@ -3,9 +3,13 @@
   "use strict";
 
   function create({ authService, logger }) {
+    function isGhPages() {
+      return /\/shopup-core\//.test(window.location.pathname || "");
+    }
+
+    // ✅ base-safe URL (works even with <base href="../" />)
     function dashboardUrl() {
-      // always stay inside /seller/
-      return "./dashboard.html";
+      return isGhPages() ? "/shopup-core/seller/dashboard.html" : "/seller/dashboard.html";
     }
 
     async function redirectIfLoggedIn() {
