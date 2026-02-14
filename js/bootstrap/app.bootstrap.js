@@ -29,8 +29,8 @@
         );
       }
 
-      const url = config?.SUPABASE_URL;
-      const anonKey = config?.SUPABASE_ANON_KEY;
+      const url = config?.SUPABASE_URL || config?.supabaseUrl;
+      const anonKey = config?.SUPABASE_ANON_KEY || config?.supabaseAnonKey;
 
       if (!url || !anonKey) {
         logger.error("[ShopUp] Missing SUPABASE_URL / SUPABASE_ANON_KEY in ShopUpConfig", config);
@@ -43,7 +43,7 @@
   );
 
   // -----------------------------
-  // ShopUp schema lock
+  // ShopUp Core schema (locked)
   // -----------------------------
   c.register("dbSchema", () => "shopup_core", { singleton: true });
 
@@ -61,19 +61,37 @@
     { singleton: true }
   );
 
-  c.register(
-    "authAdapter",
-    (cc) =>
-      window.ShopUpSupabaseAuthAdapter.create({
-        supabase: cc.resolve("supabaseClient"),
-        logger: cc.resolve("logger"),
-      }),
-    { singleton: true }
-  );
+  // Auth adapter (needed for login/logout/session)
+  if (window.ShopUpSupabaseAuthAdapter && window.ShopUpSupabaseAuthAdapter.create) {
+    c.register(
+      "authAdapter",
+      (cc) =>
+        window.ShopUpSupabaseAuthAdapter.create({
+          supabase: cc.resolve("supabaseClient"),
+          logger: cc.resolve("logger"),
+        }),
+      { singleton: true }
+    );
+  }
+
+  // Product repo
+  if (window.ShopUpSupabaseProductRepo && window.ShopUpSupabaseProductRepo.create) {
+    c.register(
+      "productRepo",
+      (cc) =>
+        window.ShopUpSupabaseProductRepo.create({
+          supabase: cc.resolve("supabaseClient"),
+          logger: cc.resolve("logger"),
+          schema: cc.resolve("dbSchema"),
+        }),
+      { singleton: true }
+    );
+  }
 
   // -----------------------------
   // Services
   // -----------------------------
+  // Seller service
   c.register(
     "sellerService",
     (cc) =>
@@ -84,13 +102,31 @@
     { singleton: true }
   );
 
-  c.register(
-    "authService",
-    (cc) =>
-      window.ShopUpAuthService.create({
-        authAdapter: cc.resolve("authAdapter"),
-        logger: cc.resolve("logger"),
-      }),
-    { singleton: true }
-  );
+  // Auth service
+  if (window.ShopUpAuthService && window.ShopUpAuthService.create) {
+    c.register(
+      "authService",
+      (cc) =>
+        window.ShopUpAuthService.create({
+          authAdapter: cc.resolve("authAdapter"),
+          logger: cc.resolve("logger"),
+          role: "seller",
+        }),
+      { singleton: true }
+    );
+  }
+
+  // Product service
+  if (window.ShopUpProductService && window.ShopUpProductService.create) {
+    c.register(
+      "productService",
+      (cc) =>
+        window.ShopUpProductService.create({
+          productRepo: cc.resolve("productRepo"),
+          sellerService: cc.resolve("sellerService"),
+          logger: cc.resolve("logger"),
+        }),
+      { singleton: true }
+    );
+  }
 })();
