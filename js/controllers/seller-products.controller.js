@@ -2,83 +2,119 @@
 (function () {
   "use strict";
 
-  function create({ productService, logger }) {
-    let els = {};
-
-    function $(sel) {
-      return document.querySelector(sel);
+  function create({ productService, authService, logger }) {
+    function isGhPages() {
+      return /\/shopup-core\//.test(window.location.pathname || "");
+    }
+    function loginUrl() {
+      return isGhPages() ? "/shopup-core/seller/login.html" : "/seller/login.html";
     }
 
-    function setMsg(text) {
-      if (els.msg) els.msg.textContent = text || "";
+    const els = {};
+    function grabEls() {
+      els.logoutBtn = document.querySelector("#logoutBtn");
+      els.refreshBtn = document.querySelector("#refreshBtn");
+      els.form = document.querySelector("#productForm");
+      els.createBtn = document.querySelector("#createBtn");
+      els.formMsg = document.querySelector("#formMsg");
+      els.listMsg = document.querySelector("#listMsg");
+      els.tbody = document.querySelector("#productsTbody");
+      els.campusSelect = document.querySelector("#campus_id");
     }
 
-    function money(n) {
-      const x = Number(n);
-      if (!Number.isFinite(x)) return "—";
-      return x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function safeText(el, text) {
+      if (el) el.textContent = text;
     }
 
-    function renderList(items) {
-      if (!els.list) return;
+    async function guardSession() {
+      const res = await authService.session();
+      const session = res?.data?.session;
+      if (!session || !session.user) {
+        window.location.href = loginUrl();
+        return false;
+      }
+      return true;
+    }
 
-      if (!items.length) {
-        els.list.innerHTML = `<div class="muted">No products yet. Create your first one above.</div>`;
+    async function loadCampuses() {
+      if (!els.campusSelect) return;
+      els.campusSelect.innerHTML = `<option value="">Loading campuses...</option>`;
+
+      const res = await productService.listCampuses();
+      if (!res.ok) {
+        els.campusSelect.innerHTML = `<option value="">Failed to load campuses</option>`;
         return;
       }
 
-      els.list.innerHTML = items
-        .map(
-          (p) => `
-          <div class="item">
-            <div style="flex:1;">
-              <div style="font-weight:700;">${escapeHtml(p.name || "—")}</div>
-              <div class="muted" style="font-size:12px;">
-                Price: GHS ${money(p.price)} • Status: ${escapeHtml(p.status || "—")}
-              </div>
-            </div>
-            <button class="secondary" data-del="${p.id}">Delete</button>
-          </div>
-        `
-        )
-        .join("");
+      const campuses = res.data || [];
+      if (!campuses.length) {
+        els.campusSelect.innerHTML = `<option value="">No campuses found</option>`;
+        return;
+      }
 
-      // Bind delete
-      els.list.querySelectorAll("button[data-del]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const id = btn.getAttribute("data-del");
-          if (!id) return;
+      const options = [
+        `<option value="">All campuses (optional)</option>`,
+        ...campuses.map((c) => {
+          const label = c.city ? `${c.name} — ${c.city}` : c.name;
+          return `<option value="${c.id}">${label}</option>`;
+        }),
+      ];
 
-          btn.disabled = true;
-          setMsg("Deleting…");
+      els.campusSelect.innerHTML = options.join("");
+    }
 
-          const res = await productService.deleteProduct(id);
-          if (!res || !res.ok) {
-            setMsg(res?.error?.message || "Delete failed.");
-            btn.disabled = false;
-            return;
-          }
+    function money(v) {
+      const n = Number(v || 0);
+      return isFinite(n) ? n.toFixed(2) : "0.00";
+    }
 
-          setMsg("✅ Deleted.");
-          await refresh();
-        });
+    async function renderList() {
+      safeText(els.listMsg, "Loading…");
+      if (els.tbody) els.tbody.innerHTML = "";
+
+      const res = await productService.listMyProducts();
+      if (!res.ok) {
+        safeText(els.listMsg, res?.error?.message || "Failed to load products.");
+        return;
+      }
+
+      const rows = res.data || [];
+      if (!rows.length) {
+        safeText(els.listMsg, "No products yet. Create your first product above.");
+        return;
+      }
+
+      safeText(els.listMsg, `Loaded ${rows.length} product(s).`);
+
+      rows.forEach((p) => {
+        const tr = document.createElement("tr");
+
+        const status = String(p.status || "draft");
+        const avail = !!p.is_available;
+
+        tr.innerHTML = `
+          <td>${escapeHtml(p.title || "—")}</td>
+          <td>${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</td>
+          <td><span class="pill">${escapeHtml(status)}</span></td>
+          <td>${avail ? "✅" : "—"}</td>
+          <td>${p.campus_id ? `<code>${escapeHtml(p.campus_id)}</code>` : "—"}</td>
+          <td>
+            <button class="secondary" data-action="toggle" data-id="${p.id}" data-avail="${avail}">
+              ${avail ? "Disable" : "Enable"}
+            </button>
+            <button class="secondary" data-action="pub" data-id="${p.id}" data-status="${status}">
+              ${status === "published" ? "Unpublish" : "Publish"}
+            </button>
+            <button class="danger" data-action="del" data-id="${p.id}">Delete</button>
+          </td>
+        `;
+
+        els.tbody.appendChild(tr);
       });
     }
 
-    async function refresh() {
-      setMsg("Loading products…");
-      const res = await productService.listMyProducts();
-      if (!res || !res.ok) {
-        setMsg(res?.error?.message || "Failed to load products.");
-        renderList([]);
-        return;
-      }
-      renderList(res.data || []);
-      setMsg("");
-    }
-
     function escapeHtml(str) {
-      return String(str || "")
+      return String(str ?? "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
@@ -86,49 +122,128 @@
         .replaceAll("'", "&#039;");
     }
 
-    function start() {
-      els.form = $("#productCreateForm");
-      els.name = $("#product_name");
-      els.price = $("#product_price");
-      els.btn = $("#productSubmitBtn");
-      els.msg = $("#productMsg");
-      els.list = $("#productList");
+    async function onCreate(e) {
+      e.preventDefault();
+      if (els.createBtn) els.createBtn.disabled = true;
+      safeText(els.formMsg, "Creating…");
 
-      if (!els.form) {
-        logger.warn("[ShopUp] productCreateForm not found (skip products).");
-        return;
-      }
+      try {
+        const fd = new FormData(els.form);
 
-      els.form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+        const title = String(fd.get("title") || "").trim();
+        const category = String(fd.get("category") || "").trim() || null;
+        const campus_id = String(fd.get("campus_id") || "").trim() || null;
+        const description = String(fd.get("description") || "").trim() || null;
 
-        if (els.btn) els.btn.disabled = true;
-        setMsg("Creating product…");
+        const price_ghs = Number(fd.get("price_ghs"));
+        const is_available = String(fd.get("is_available") || "true") === "true";
+        const status = String(fd.get("status") || "draft");
+        const image_urls_raw = String(fd.get("image_urls") || "").trim();
 
-        const name = els.name?.value || "";
-        const price = els.price?.value || "";
-
-        const res = await productService.createProduct({ name, price });
-        if (!res || !res.ok) {
-          setMsg(res?.error?.message || "Create failed.");
-          if (els.btn) els.btn.disabled = false;
+        if (!title) {
+          safeText(els.formMsg, "Title is required.");
+          if (els.createBtn) els.createBtn.disabled = false;
+          return;
+        }
+        if (!isFinite(price_ghs) || price_ghs < 0) {
+          safeText(els.formMsg, "Price must be a valid number.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
-        setMsg("✅ Created.");
-        if (els.name) els.name.value = "";
-        if (els.price) els.price.value = "";
-        if (els.btn) els.btn.disabled = false;
+        const image_urls =
+          image_urls_raw.length
+            ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
 
-        await refresh();
-      });
+        const res = await productService.createProduct({
+          title,
+          category,
+          campus_id,
+          description,
+          price_ghs,
+          currency: "GHS",
+          status,
+          is_available,
+          image_urls,
+        });
 
-      refresh();
+        if (!res.ok) {
+          safeText(els.formMsg, res?.error?.message || "Create failed.");
+          if (els.createBtn) els.createBtn.disabled = false;
+          return;
+        }
+
+        safeText(els.formMsg, "✅ Product created.");
+        els.form.reset();
+        await renderList();
+      } catch (err) {
+        logger.error("[ShopUp] create product error", err);
+        safeText(els.formMsg, "Something went wrong. Please try again.");
+      } finally {
+        if (els.createBtn) els.createBtn.disabled = false;
+      }
     }
 
-    return { start, refresh };
+    async function onTableClick(e) {
+      const btn = e.target?.closest?.("button");
+      if (!btn) return;
+
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      if (!action || !id) return;
+
+      if (action === "del") {
+        if (!confirm("Delete this product?")) return;
+        const res = await productService.deleteProduct(id);
+        if (!res.ok) alert(res?.error?.message || "Delete failed.");
+        await renderList();
+        return;
+      }
+
+      if (action === "toggle") {
+        const current = btn.dataset.avail === "true";
+        const res = await productService.toggleAvailability(id, !current);
+        if (!res.ok) alert(res?.error?.message || "Update failed.");
+        await renderList();
+        return;
+      }
+
+      if (action === "pub") {
+        const status = btn.dataset.status;
+        const res = status === "published"
+          ? await productService.unpublish(id)
+          : await productService.publish(id);
+
+        if (!res.ok) alert(res?.error?.message || "Update failed.");
+        await renderList();
+      }
+    }
+
+    function start() {
+      grabEls();
+
+      guardSession()
+        .then((ok) => {
+          if (!ok) return;
+          return loadCampuses().then(renderList);
+        })
+        .catch((e) => logger.error(e));
+
+      if (els.form) els.form.addEventListener("submit", onCreate);
+      if (els.refreshBtn) els.refreshBtn.addEventListener("click", renderList);
+      if (els.tbody) els.tbody.addEventListener("click", onTableClick);
+
+      if (els.logoutBtn) {
+        els.logoutBtn.addEventListener("click", async () => {
+          await authService.logout();
+          window.location.href = loginUrl();
+        });
+      }
+    }
+
+    return { start };
   }
 
   window.ShopUpSellerProductsController = { create };
 })();
-
