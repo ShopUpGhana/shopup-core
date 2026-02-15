@@ -1,82 +1,217 @@
-// /js/controllers/seller-login.controller.js
-(function () {
-  "use strict";
+<!-- /seller/dashboard.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ShopUp • Seller Dashboard</title>
 
-  function create({ authService, logger }) {
-    function isGhPages() {
-      return /\/shopup-core\//.test(window.location.pathname || "");
-    }
+    <!-- GitHub Pages base fix -->
+    <base href="../" />
 
-    // ✅ base-safe URL (works even with <base href="../" />)
-    function dashboardUrl() {
-      return isGhPages() ? "/shopup-core/seller/dashboard.html" : "/seller/dashboard.html";
-    }
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        margin: 0;
+        padding: 24px;
+        background: #0b1220;
+        color: #e8eefc;
+      }
+      .wrap { max-width: 780px; margin: 0 auto; }
+      .card {
+        background: #111a2e;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 18px;
+        margin-bottom: 14px;
+      }
+      h1 { margin: 0 0 10px; font-size: 20px; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
+      .pill {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        opacity: 0.95;
+      }
+      .muted { opacity: .8; }
+      button {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 0;
+        background: #2d6cff;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: transparent;
+        border: 1px solid rgba(255,255,255,.16);
+      }
+      .msg { margin-top: 10px; font-size: 13px; }
+      code { opacity: .9; }
+      a { color: #8ab4ff; }
+    </style>
+  </head>
 
-    async function redirectIfLoggedIn() {
-      try {
-        const res = await authService.session();
-        const session = res?.data?.session;
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <h1>Seller Dashboard</h1>
+          <div class="row">
+            <a href="seller/products.html" style="text-decoration:none;">
+              <button type="button">My Products</button>
+            </a>
+            <button id="logoutBtn" class="secondary" type="button">Logout</button>
+          </div>
+        </div>
 
-        if (session && session.user) {
-          window.location.href = dashboardUrl();
-          return true;
+        <div id="statusPills" class="row" style="margin-top:10px;"></div>
+        <div id="msg" class="msg muted">Loading your profile…</div>
+      </div>
+
+      <div class="card">
+        <h1>Account</h1>
+        <div class="muted">Email</div>
+        <div id="emailVal">—</div>
+
+        <div style="height:10px;"></div>
+
+        <div class="muted">User ID</div>
+        <div><code id="userIdVal">—</code></div>
+      </div>
+
+      <div class="card">
+        <h1>Seller Profile</h1>
+
+        <div class="muted">Shop / Brand name</div>
+        <div id="displayNameVal">—</div>
+
+        <div style="height:10px;"></div>
+
+        <div class="muted">Campus</div>
+        <div id="campusVal">—</div>
+
+        <div style="height:10px;"></div>
+
+        <div class="muted">WhatsApp</div>
+        <div id="whatsappVal">—</div>
+      </div>
+    </div>
+
+    <!-- 1) Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- 2) Config -->
+    <script src="js/supabase-config.js"></script>
+
+    <!-- 3) Core DI -->
+    <script src="js/core/container.js"></script>
+
+    <!-- 4) App bootstrap (creates supabaseClient) -->
+    <script src="js/bootstrap/app.bootstrap.js"></script>
+
+    <script>
+      (function () {
+        "use strict";
+
+        const msg = document.querySelector("#msg");
+        const logoutBtn = document.querySelector("#logoutBtn");
+
+        const emailVal = document.querySelector("#emailVal");
+        const userIdVal = document.querySelector("#userIdVal");
+        const displayNameVal = document.querySelector("#displayNameVal");
+        const campusVal = document.querySelector("#campusVal");
+        const whatsappVal = document.querySelector("#whatsappVal");
+        const statusPills = document.querySelector("#statusPills");
+
+        function isGhPages() {
+          return /\/shopup-core\//.test(window.location.pathname || "");
         }
-        return false;
-      } catch (e) {
-        logger.error("[ShopUp] redirectIfLoggedIn error", e);
-        return false;
-      }
-    }
+        function loginUrl() {
+          return isGhPages() ? "/shopup-core/seller/login.html" : "/seller/login.html";
+        }
 
-    function start() {
-      // If already logged in → go dashboard
-      redirectIfLoggedIn();
+        function pill(text) {
+          const el = document.createElement("span");
+          el.className = "pill";
+          el.textContent = text;
+          return el;
+        }
 
-      const form = document.querySelector("#sellerLoginForm");
-      const submitBtn = document.querySelector("#submitBtn");
-      const msg = document.querySelector("#msg");
+        async function main() {
+          const client = window.ShopUpContainer.resolve("supabaseClient");
 
-      if (!form) {
-        logger.error("[ShopUp] #sellerLoginForm not found.");
-        return;
-      }
-
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        if (submitBtn) submitBtn.disabled = true;
-        if (msg) msg.textContent = "Signing in…";
-
-        try {
-          const formData = new FormData(form);
-          const email = String(formData.get("email") || "").trim();
-          const password = String(formData.get("password") || "");
-
-          if (!email || !password) {
-            if (msg) msg.textContent = "Email and password are required.";
-            if (submitBtn) submitBtn.disabled = false;
+          const { data: { user } } = await client.auth.getUser();
+          if (!user) {
+            msg.textContent = "Not logged in. Redirecting to login…";
+            window.location.href = loginUrl();
             return;
           }
 
-          const res = await authService.login({ email, password });
+          emailVal.textContent = user.email || "—";
+          userIdVal.textContent = user.id;
 
-          if (!res || !res.ok) {
-            if (msg) msg.textContent = res?.error?.message || "Login failed.";
-            if (submitBtn) submitBtn.disabled = false;
+          const { data: seller, error: sellerErr } = await client
+            .schema("shopup_core")
+            .from("sellers")
+            .select("id,user_id,display_name,status,trust_tier,whatsapp_phone,campus_id")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (sellerErr) {
+            console.error(sellerErr);
+            msg.textContent = "Could not load seller profile (RLS/permissions?).";
             return;
           }
 
-          if (msg) msg.textContent = "✅ Logged in. Redirecting…";
-          window.location.href = dashboardUrl();
-        } catch (err) {
-          logger.error("[ShopUp] login submit error", err);
-          if (msg) msg.textContent = "Something went wrong. Please try again.";
-          if (submitBtn) submitBtn.disabled = false;
+          if (!seller) {
+            msg.textContent = "No seller profile found for this account yet.";
+            return;
+          }
+
+          displayNameVal.textContent = seller.display_name || "—";
+          whatsappVal.textContent = seller.whatsapp_phone || "—";
+
+          let campusName = "—";
+          if (seller.campus_id) {
+            const { data: campus } = await client
+              .schema("shopup_core")
+              .from("campuses")
+              .select("id,name,city")
+              .eq("id", seller.campus_id)
+              .maybeSingle();
+
+            if (campus) campusName = campus.city ? `${campus.name} — ${campus.city}` : campus.name;
+          }
+          campusVal.textContent = campusName;
+
+          statusPills.innerHTML = "";
+          statusPills.appendChild(pill(`Status: ${seller.status || "—"}`));
+          statusPills.appendChild(pill(`Trust: ${seller.trust_tier || "—"}`));
+
+          msg.textContent = "✅ Loaded.";
         }
-      });
-    }
 
-    return { start };
-  }
+        logoutBtn.addEventListener("click", async () => {
+          try {
+            const client = window.ShopUpContainer.resolve("supabaseClient");
+            await client.auth.signOut();
+            msg.textContent = "Logged out. Redirecting…";
+            window.location.href = loginUrl();
+          } catch (e) {
+            console.error(e);
+            msg.textContent = "Logout failed. Try again.";
+          }
+        });
 
-  window.ShopUpSellerLoginController = { create };
-})();
+        main().catch((e) => {
+          console.error(e);
+          msg.textContent = "Something went wrong loading dashboard.";
+        });
+      })();
+    </script>
+  </body>
+</html>
