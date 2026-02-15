@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>ShopUp • My Products</title>
 
-    <!-- keep base for GH Pages script paths -->
     <base href="../" />
 
     <style>
@@ -16,13 +15,15 @@
       .card { background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:18px; margin-top:14px; }
       h1 { margin:0; font-size:20px; }
       .muted { opacity:.8; }
-      .row { display:flex; gap:12px; flex-wrap:wrap; }
       label { display:block; font-size:12px; margin:12px 0 6px; opacity:.9; }
       input, select, textarea {
         width:100%; padding:10px 12px; border-radius:10px;
         border:1px solid rgba(255,255,255,.12); background:#0b1220; color:#e8eefc;
       }
       textarea { min-height: 90px; resize: vertical; }
+      .row { display:flex; gap:12px; flex-wrap:wrap; }
+      .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+      @media (max-width: 760px){ .grid2 { grid-template-columns: 1fr; } }
       button {
         padding:10px 12px; border-radius:10px; border:0; background:#2d6cff;
         color:white; font-weight:600; cursor:pointer;
@@ -35,8 +36,7 @@
       th { opacity:.85; font-weight:600; }
       a { color:#8ab4ff; }
       .pill { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); font-size:12px; opacity:.95; }
-      .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-      @media (max-width: 760px){ .grid2 { grid-template-columns: 1fr; } }
+      code { opacity:.9; }
     </style>
   </head>
 
@@ -45,10 +45,12 @@
       <div class="top">
         <div>
           <h1>My Products</h1>
-          <div class="muted">Create and manage products in <code>shopup_core.products</code> (RLS protected).</div>
+          <div class="muted">Create + manage products (RLS protected) in <code>shopup_core.products</code>.</div>
         </div>
         <div class="row">
-          <a href="seller/dashboard.html" style="text-decoration:none;"><button class="secondary" type="button">Back to Dashboard</button></a>
+          <a href="seller/dashboard.html" style="text-decoration:none;">
+            <button class="secondary" type="button">Back to Dashboard</button>
+          </a>
           <button id="logoutBtn" class="secondary" type="button">Logout</button>
         </div>
       </div>
@@ -58,18 +60,21 @@
 
         <form id="productForm">
           <label for="title">Title *</label>
-          <input id="title" name="title" required placeholder="e.g. Indomie (Carton) - 40 Packs" />
+          <input id="title" name="title" required placeholder="e.g. Fried Rice + Chicken (Large)" />
 
           <div class="grid2">
             <div>
               <label for="category">Category (optional)</label>
-              <input id="category" name="category" placeholder="e.g. Groceries" />
+              <input id="category" name="category" placeholder="e.g. Food" />
             </div>
             <div>
-              <label for="campus_id">Campus (optional)</label>
+              <label for="campus_id">Campus visibility (optional)</label>
               <select id="campus_id" name="campus_id">
                 <option value="">Loading campuses...</option>
               </select>
+              <div class="muted" style="font-size:12px;margin-top:6px;">
+                Leave blank to show across campuses later (we’ll control this with discovery rules).
+              </div>
             </div>
           </div>
 
@@ -79,7 +84,7 @@
           <div class="grid2">
             <div>
               <label for="price_ghs">Price (GHS) *</label>
-              <input id="price_ghs" name="price_ghs" type="number" step="0.01" min="0" required placeholder="e.g. 45" />
+              <input id="price_ghs" name="price_ghs" type="number" step="0.01" min="0" required placeholder="e.g. 25" />
             </div>
             <div>
               <label for="is_available">Availability</label>
@@ -126,7 +131,7 @@
                 <th>Status</th>
                 <th>Available</th>
                 <th>Campus</th>
-                <th style="width:160px;">Actions</th>
+                <th style="width:180px;">Actions</th>
               </tr>
             </thead>
             <tbody id="productsTbody"></tbody>
@@ -135,20 +140,24 @@
       </div>
     </div>
 
-    <!-- Supabase + DI + app -->
+    <!-- 1) Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- 2) Config -->
     <script src="js/supabase-config.js"></script>
+
+    <!-- 3) Core DI -->
     <script src="js/core/container.js"></script>
     <script src="js/core/result.js"></script>
 
-    <!-- Services -->
-    <script src="js/features/seller/sellerService.js"></script>
+    <!-- 4) Services used by bootstrap -->
+    <script src="js/features/auth/authService.js"></script>
     <script src="js/features/products/productService.js"></script>
 
-    <!-- Bootstrap -->
+    <!-- 5) App bootstrap (registers supabaseClient + authService + productService) -->
     <script src="js/bootstrap/app.bootstrap.js"></script>
 
-    <!-- Controller + bootstrap -->
+    <!-- 6) Controller + page bootstrap -->
     <script src="js/controllers/seller-products.controller.js"></script>
     <script src="js/bootstrap/seller-products.bootstrap.js"></script>
   </body>
