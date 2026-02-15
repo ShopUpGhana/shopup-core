@@ -8,15 +8,11 @@
     return;
   }
 
-  // -----------------------------
-  // Core (singletons)
-  // -----------------------------
+  // Core
   c.register("config", () => window.ShopUpConfig, { singleton: true });
   c.register("logger", () => console, { singleton: true });
 
-  // -----------------------------
-  // Supabase Client (singleton)
-  // -----------------------------
+  // Supabase client singleton
   c.register(
     "supabaseClient",
     (cc) => {
@@ -24,9 +20,7 @@
       const logger = cc.resolve("logger");
 
       if (!window.supabase || !window.supabase.createClient) {
-        throw new Error(
-          "[ShopUp] Supabase SDK not loaded. Include supabase-js@2 before app.bootstrap.js"
-        );
+        throw new Error("[ShopUp] Supabase SDK not loaded. Include supabase-js@2 before app.bootstrap.js");
       }
 
       const url = config?.SUPABASE_URL || config?.supabaseUrl;
@@ -42,26 +36,7 @@
     { singleton: true }
   );
 
-  // -----------------------------
-  // ShopUp Core schema (locked)
-  // -----------------------------
-  c.register("dbSchema", () => "shopup_core", { singleton: true });
-
-  // -----------------------------
-  // Adapters
-  // -----------------------------
-  c.register(
-    "dbAdapter",
-    (cc) =>
-      window.ShopUpSupabaseDbAdapter.create({
-        supabase: cc.resolve("supabaseClient"),
-        logger: cc.resolve("logger"),
-        schema: cc.resolve("dbSchema"),
-      }),
-    { singleton: true }
-  );
-
-  // Auth adapter (needed for login/logout/session)
+  // Auth adapter (thin wrapper)
   if (window.ShopUpSupabaseAuthAdapter && window.ShopUpSupabaseAuthAdapter.create) {
     c.register(
       "authAdapter",
@@ -74,34 +49,6 @@
     );
   }
 
-  // Product repo
-  if (window.ShopUpSupabaseProductRepo && window.ShopUpSupabaseProductRepo.create) {
-    c.register(
-      "productRepo",
-      (cc) =>
-        window.ShopUpSupabaseProductRepo.create({
-          supabase: cc.resolve("supabaseClient"),
-          logger: cc.resolve("logger"),
-          schema: cc.resolve("dbSchema"),
-        }),
-      { singleton: true }
-    );
-  }
-
-  // -----------------------------
-  // Services
-  // -----------------------------
-  // Seller service
-  c.register(
-    "sellerService",
-    (cc) =>
-      window.ShopUpSellerService.create({
-        db: cc.resolve("dbAdapter"),
-        logger: cc.resolve("logger"),
-      }),
-    { singleton: true }
-  );
-
   // Auth service
   if (window.ShopUpAuthService && window.ShopUpAuthService.create) {
     c.register(
@@ -110,20 +57,31 @@
         window.ShopUpAuthService.create({
           authAdapter: cc.resolve("authAdapter"),
           logger: cc.resolve("logger"),
-          role: "seller",
         }),
       { singleton: true }
     );
   }
 
-  // Product service
+  // Seller service (used already in register)
+  if (window.ShopUpSellerService && window.ShopUpSellerService.create) {
+    c.register(
+      "sellerService",
+      (cc) =>
+        window.ShopUpSellerService.create({
+          supabaseClient: cc.resolve("supabaseClient"),
+          logger: cc.resolve("logger"),
+        }),
+      { singleton: true }
+    );
+  }
+
+  // ✅ Product service (new)
   if (window.ShopUpProductService && window.ShopUpProductService.create) {
     c.register(
       "productService",
       (cc) =>
         window.ShopUpProductService.create({
-          productRepo: cc.resolve("productRepo"),
-          sellerService: cc.resolve("sellerService"),
+          supabaseClient: cc.resolve("supabaseClient"),
           logger: cc.resolve("logger"),
         }),
       { singleton: true }
