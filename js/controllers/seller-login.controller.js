@@ -9,8 +9,10 @@
 
     // ✅ base-safe URL (works even with <base href="../" />)
     function dashboardUrl() {
-      return isGhPages() ? "/shopup-core/seller/dashboard.html" : "/seller/dashboard.html";
-    }
+  const path = window.location.pathname || "";
+  const isGhPages = /\/shopup-core\//.test(path);
+  return isGhPages ? "/shopup-core/seller/dashboard.html" : "/seller/dashboard.html";
+}
 
     async function redirectIfLoggedIn() {
       try {
