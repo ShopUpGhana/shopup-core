@@ -46,6 +46,7 @@
       }
     }
 
+    // ✅ UPDATED: join campus info so UI shows name/city instead of UUID
     async function listMyProducts() {
       const me = await getMySellerRow();
       if (!me.ok) return me;
@@ -55,7 +56,18 @@
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .select("id,title,price_ghs,currency,status,is_available,campus_id,created_at,updated_at")
+        .select(`
+          id,
+          title,
+          price_ghs,
+          currency,
+          status,
+          is_available,
+          campus_id,
+          campus:campuses!left(name, city),
+          created_at,
+          updated_at
+        `)
         .eq("seller_id", seller.id)
         .order("created_at", { ascending: false });
 
