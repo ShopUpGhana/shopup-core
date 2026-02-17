@@ -11,6 +11,8 @@
     }
 
     const els = {};
+    let cachedProducts = []; // so we can edit without re-query
+
     function grabEls() {
       els.logoutBtn = document.querySelector("#logoutBtn");
       els.refreshBtn = document.querySelector("#refreshBtn");
@@ -20,19 +22,20 @@
       els.listMsg = document.querySelector("#listMsg");
       els.tbody = document.querySelector("#productsTbody");
       els.campusSelect = document.querySelector("#campus_id");
+
+      // fields
+      els.productId = document.querySelector("#product_id");
+      els.title = document.querySelector("#title");
+      els.category = document.querySelector("#category");
+      els.description = document.querySelector("#description");
+      els.price = document.querySelector("#price_ghs");
+      els.avail = document.querySelector("#is_available");
+      els.status = document.querySelector("#status");
+      els.imageUrls = document.querySelector("#image_urls");
     }
 
     function safeText(el, text) {
       if (el) el.textContent = text;
-    }
-
-    function escapeHtml(str) {
-      return String(str ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
     }
 
     async function guardSession() {
@@ -60,10 +63,9 @@
         `<option value="">All campuses (optional)</option>`,
         ...campuses.map((c) => {
           const label = c.city ? `${c.name} — ${c.city}` : c.name;
-          return `<option value="${c.id}">${escapeHtml(label)}</option>`;
+          return `<option value="${c.id}">${label}</option>`;
         }),
       ];
-
       els.campusSelect.innerHTML = options.join("");
     }
 
@@ -72,11 +74,49 @@
       return isFinite(n) ? n.toFixed(2) : "0.00";
     }
 
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
     function campusLabelFromProduct(p) {
-      // p.campus comes from productService join: campus:campuses!left(name, city)
       return p.campus
         ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
         : "All campuses";
+    }
+
+    function setEditMode(product) {
+      if (!product) return;
+
+      if (els.productId) els.productId.value = product.id;
+      if (els.title) els.title.value = product.title || "";
+      if (els.category) els.category.value = product.category || "";
+      if (els.description) els.description.value = product.description || "";
+      if (els.price) els.price.value = product.price_ghs ?? "";
+      if (els.avail) els.avail.value = String(!!product.is_available);
+      if (els.status) els.status.value = String(product.status || "draft");
+      if (els.imageUrls) els.imageUrls.value = Array.isArray(product.image_urls) ? product.image_urls.join(", ") : "";
+
+      // campus_id may exist even though we joined campus object
+      if (els.campusSelect) {
+        const campusId = product.campus_id || "";
+        els.campusSelect.value = campusId || "";
+      }
+
+      if (els.createBtn) els.createBtn.textContent = "Save changes";
+      safeText(els.formMsg, `Editing: ${product.title || "product"}`);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function clearEditMode() {
+      if (els.productId) els.productId.value = "";
+      if (els.form) els.form.reset();
+      if (els.createBtn) els.createBtn.textContent = "Create product";
+      safeText(els.formMsg, "");
     }
 
     async function renderList() {
@@ -90,6 +130,8 @@
       }
 
       const rows = res.data || [];
+      cachedProducts = rows;
+
       if (!rows.length) {
         safeText(els.listMsg, "No products yet. Create your first product above.");
         return;
@@ -99,9 +141,9 @@
 
       rows.forEach((p) => {
         const tr = document.createElement("tr");
+
         const status = String(p.status || "draft");
         const avail = !!p.is_available;
-
         const campusLabel = campusLabelFromProduct(p);
 
         tr.innerHTML = `
@@ -111,6 +153,7 @@
           <td>${avail ? "✅" : "—"}</td>
           <td>${escapeHtml(campusLabel)}</td>
           <td>
+            <button class="secondary" data-action="edit" data-id="${p.id}">Edit</button>
             <button class="secondary" data-action="toggle" data-id="${p.id}" data-avail="${avail}">
               ${avail ? "Disable" : "Enable"}
             </button>
@@ -125,14 +168,15 @@
       });
     }
 
-    async function onCreate(e) {
+    async function onCreateOrUpdate(e) {
       e.preventDefault();
       if (els.createBtn) els.createBtn.disabled = true;
-      safeText(els.formMsg, "Creating…");
+      safeText(els.formMsg, "Saving…");
 
       try {
         const fd = new FormData(els.form);
 
+        const product_id = String(fd.get("product_id") || "").trim();
         const title = String(fd.get("title") || "").trim();
         const category = String(fd.get("category") || "").trim() || null;
         const campus_id = String(fd.get("campus_id") || "").trim() || null;
@@ -145,18 +189,21 @@
 
         if (!title) {
           safeText(els.formMsg, "Title is required.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
         if (!isFinite(price_ghs) || price_ghs < 0) {
           safeText(els.formMsg, "Price must be a valid number.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
-        const image_urls = image_urls_raw.length
-          ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
-          : [];
+        const image_urls =
+          image_urls_raw.length
+            ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
 
-        const res = await productService.createProduct({
+        const payload = {
           title,
           category,
           campus_id,
@@ -166,18 +213,26 @@
           status,
           is_available,
           image_urls,
-        });
+        };
+
+        let res;
+        if (product_id) {
+          res = await productService.updateProduct(product_id, payload);
+        } else {
+          res = await productService.createProduct(payload);
+        }
 
         if (!res.ok) {
-          safeText(els.formMsg, res?.error?.message || "Create failed.");
+          safeText(els.formMsg, res?.error?.message || "Save failed.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
-        safeText(els.formMsg, "✅ Product created.");
-        els.form.reset();
+        safeText(els.formMsg, product_id ? "✅ Changes saved." : "✅ Product created.");
+        clearEditMode();
         await renderList();
       } catch (err) {
-        logger.error("[ShopUp] create product error", err);
+        logger.error("[ShopUp] save product error", err);
         safeText(els.formMsg, "Something went wrong. Please try again.");
       } finally {
         if (els.createBtn) els.createBtn.disabled = false;
@@ -192,10 +247,18 @@
       const id = btn.dataset.id;
       if (!action || !id) return;
 
+      if (action === "edit") {
+        const p = cachedProducts.find((x) => x.id === id);
+        if (!p) return;
+        setEditMode(p);
+        return;
+      }
+
       if (action === "del") {
-        if (!confirm("Delete this product?")) return;
+        if (!confirm("Delete this product? (soft delete)")) return;
         const res = await productService.deleteProduct(id);
         if (!res.ok) alert(res?.error?.message || "Delete failed.");
+        clearEditMode();
         await renderList();
         return;
       }
@@ -209,8 +272,8 @@
       }
 
       if (action === "pub") {
-        const currentStatus = btn.dataset.status;
-        const res = currentStatus === "published"
+        const status = btn.dataset.status;
+        const res = status === "published"
           ? await productService.unpublish(id)
           : await productService.publish(id);
 
@@ -229,8 +292,8 @@
         })
         .catch((e) => logger.error(e));
 
-      if (els.form) els.form.addEventListener("submit", onCreate);
-      if (els.refreshBtn) els.refreshBtn.addEventListener("click", renderList);
+      if (els.form) els.form.addEventListener("submit", onCreateOrUpdate);
+      if (els.refreshBtn) els.refreshBtn.addEventListener("click", () => { clearEditMode(); renderList(); });
       if (els.tbody) els.tbody.addEventListener("click", onTableClick);
 
       if (els.logoutBtn) {
