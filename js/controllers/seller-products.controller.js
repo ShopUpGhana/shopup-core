@@ -68,6 +68,15 @@
       return isFinite(n) ? n.toFixed(2) : "0.00";
     }
 
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
     async function renderList() {
       safeText(els.listMsg, "Loading…");
       if (els.tbody) els.tbody.innerHTML = "";
@@ -92,12 +101,17 @@
         const status = String(p.status || "draft");
         const avail = !!p.is_available;
 
+        // ✅ Campus label (joined via productService)
+        const campusLabel = p.campus
+          ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
+          : "All campuses";
+
         tr.innerHTML = `
           <td>${escapeHtml(p.title || "—")}</td>
           <td>${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</td>
           <td><span class="pill">${escapeHtml(status)}</span></td>
           <td>${avail ? "✅" : "—"}</td>
-          <td>${p.campus_id ? `<code>${escapeHtml(p.campus_id)}</code>` : "—"}</td>
+          <td>${escapeHtml(campusLabel)}</td>
           <td>
             <button class="secondary" data-action="toggle" data-id="${p.id}" data-avail="${avail}">
               ${avail ? "Disable" : "Enable"}
@@ -111,15 +125,6 @@
 
         els.tbody.appendChild(tr);
       });
-    }
-
-    function escapeHtml(str) {
-      return String(str ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
     }
 
     async function onCreate(e) {
@@ -142,12 +147,10 @@
 
         if (!title) {
           safeText(els.formMsg, "Title is required.");
-          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
         if (!isFinite(price_ghs) || price_ghs < 0) {
           safeText(els.formMsg, "Price must be a valid number.");
-          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
@@ -170,7 +173,6 @@
 
         if (!res.ok) {
           safeText(els.formMsg, res?.error?.message || "Create failed.");
-          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
@@ -210,8 +212,8 @@
       }
 
       if (action === "pub") {
-        const status = btn.dataset.status;
-        const res = status === "published"
+        const cur = btn.dataset.status;
+        const res = cur === "published"
           ? await productService.unpublish(id)
           : await productService.publish(id);
 
