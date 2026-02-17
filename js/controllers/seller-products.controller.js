@@ -26,6 +26,15 @@
       if (el) el.textContent = text;
     }
 
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
     async function guardSession() {
       const res = await authService.session();
       const session = res?.data?.session;
@@ -47,16 +56,11 @@
       }
 
       const campuses = res.data || [];
-      if (!campuses.length) {
-        els.campusSelect.innerHTML = `<option value="">No campuses found</option>`;
-        return;
-      }
-
       const options = [
         `<option value="">All campuses (optional)</option>`,
         ...campuses.map((c) => {
           const label = c.city ? `${c.name} — ${c.city}` : c.name;
-          return `<option value="${c.id}">${label}</option>`;
+          return `<option value="${c.id}">${escapeHtml(label)}</option>`;
         }),
       ];
 
@@ -68,13 +72,11 @@
       return isFinite(n) ? n.toFixed(2) : "0.00";
     }
 
-    function escapeHtml(str) {
-      return String(str ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+    function campusLabelFromProduct(p) {
+      // p.campus comes from productService join: campus:campuses!left(name, city)
+      return p.campus
+        ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
+        : "All campuses";
     }
 
     async function renderList() {
@@ -97,14 +99,10 @@
 
       rows.forEach((p) => {
         const tr = document.createElement("tr");
-
         const status = String(p.status || "draft");
         const avail = !!p.is_available;
 
-        // ✅ Campus label (joined via productService)
-        const campusLabel = p.campus
-          ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
-          : "All campuses";
+        const campusLabel = campusLabelFromProduct(p);
 
         tr.innerHTML = `
           <td>${escapeHtml(p.title || "—")}</td>
@@ -154,10 +152,9 @@
           return;
         }
 
-        const image_urls =
-          image_urls_raw.length
-            ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
-            : [];
+        const image_urls = image_urls_raw.length
+          ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
+          : [];
 
         const res = await productService.createProduct({
           title,
@@ -212,8 +209,8 @@
       }
 
       if (action === "pub") {
-        const cur = btn.dataset.status;
-        const res = cur === "published"
+        const currentStatus = btn.dataset.status;
+        const res = currentStatus === "published"
           ? await productService.unpublish(id)
           : await productService.publish(id);
 
