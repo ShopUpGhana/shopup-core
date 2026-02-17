@@ -46,7 +46,7 @@
       }
     }
 
-    // ✅ UPDATED: join campus info so UI shows name/city instead of UUID
+    // ✅ JOIN campus name + city
     async function listMyProducts() {
       const me = await getMySellerRow();
       if (!me.ok) return me;
@@ -107,12 +107,7 @@
     }
 
     async function deleteProduct(productId) {
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .delete()
-        .eq("id", productId);
-
+      const { error } = await supabaseClient.schema(SCHEMA).from("products").delete().eq("id", productId);
       if (error) return { ok: false, error };
       return { ok: true };
     }
