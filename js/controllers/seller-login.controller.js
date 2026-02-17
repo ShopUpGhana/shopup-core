@@ -7,12 +7,12 @@
       return /\/shopup-core\//.test(window.location.pathname || "");
     }
 
-    // ✅ base-safe URL (works even with <base href="../" />)
+    // ✅ Absolute URL avoids <base href="../"> side effects
     function dashboardUrl() {
-  const path = window.location.pathname || "";
-  const isGhPages = /\/shopup-core\//.test(path);
-  return isGhPages ? "/shopup-core/seller/dashboard.html" : "/seller/dashboard.html";
-}
+      return isGhPages()
+        ? "/shopup-core/seller/dashboard.html"
+        : "/seller/dashboard.html";
+    }
 
     async function redirectIfLoggedIn() {
       try {
@@ -31,7 +31,6 @@
     }
 
     function start() {
-      // If already logged in → go dashboard
       redirectIfLoggedIn();
 
       const form = document.querySelector("#sellerLoginForm");
