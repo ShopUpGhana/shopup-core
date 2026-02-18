@@ -2,7 +2,7 @@
 (function () {
   "use strict";
 
-  function create({ productService, authService, logger }) {
+  function create({ productService, authService, storageService, logger }) {
     function isGhPages() {
       return /\/shopup-core\//.test(window.location.pathname || "");
     }
@@ -11,8 +11,8 @@
     }
 
     const els = {};
-    let cachedProducts = []; // current view cache (normal or trash)
-    let showTrash = false;   // view mode
+    let cachedProducts = [];
+    let showTrash = false;
 
     function grabEls() {
       els.logoutBtn = document.querySelector("#logoutBtn");
@@ -35,6 +35,7 @@
       els.avail = document.querySelector("#is_available");
       els.status = document.querySelector("#status");
       els.imageUrls = document.querySelector("#image_urls");
+      els.images = document.querySelector("#images"); // ✅ NEW
     }
 
     function safeText(el, text) {
@@ -119,6 +120,8 @@
         els.campusSelect.value = campusId || "";
       }
 
+      if (els.images) els.images.value = ""; // don't auto-carry file inputs
+
       if (els.createBtn) els.createBtn.textContent = "Save changes";
       safeText(els.formMsg, `Editing: ${product.title || "product"}`);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -127,6 +130,7 @@
     function clearEditMode() {
       if (els.productId) els.productId.value = "";
       if (els.form) els.form.reset();
+      if (els.images) els.images.value = "";
       if (els.createBtn) els.createBtn.textContent = "Create product";
       safeText(els.formMsg, "");
     }
@@ -150,9 +154,7 @@
       if (!rows.length) {
         safeText(
           els.listMsg,
-          showTrash
-            ? "Trash is empty."
-            : "No products yet. Create your first product above."
+          showTrash ? "Trash is empty." : "No products yet. Create your first product above."
         );
         return;
       }
@@ -185,13 +187,10 @@
             <button class="danger" data-action="del" data-id="${p.id}">Delete</button>
           `;
 
-        // Optional: show deleted time in trash by adding a subtle tooltip in title column
-        const deletedHint = showTrash && p.deleted_at ? ` (deleted: ${formatDateShort(p.deleted_at)})` : "";
+        const titleTip = showTrash && p.deleted_at ? `Deleted: ${formatDateShort(p.deleted_at)}` : "";
 
         tr.innerHTML = `
-          <td title="${escapeHtml(showTrash && p.deleted_at ? `Deleted: ${formatDateShort(p.deleted_at)}` : "")}">
-            ${escapeHtml(p.title || "—")}${escapeHtml(deletedHint)}
-          </td>
+          <td title="${escapeHtml(titleTip)}">${escapeHtml(p.title || "—")}</td>
           <td>${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</td>
           <td><span class="pill">${escapeHtml(status)}</span></td>
           <td>${avail ? "✅" : "—"}</td>
@@ -206,7 +205,6 @@
     async function onCreateOrUpdate(e) {
       e.preventDefault();
 
-      // Block edits while in trash view (UX safety)
       if (showTrash) {
         safeText(els.formMsg, "Switch back from Trash to create/edit products.");
         return;
@@ -231,12 +229,10 @@
 
         if (!title) {
           safeText(els.formMsg, "Title is required.");
-          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
         if (!isFinite(price_ghs) || price_ghs < 0) {
           safeText(els.formMsg, "Price must be a valid number.");
-          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
@@ -244,6 +240,34 @@
           image_urls_raw.length
             ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
             : [];
+
+        // ✅ Upload selected images and append URLs
+        const files = els.images?.files;
+        if (files && files.length) {
+          if (!storageService || !storageService.uploadImages) {
+            safeText(els.formMsg, "Storage service not available. Check script order.");
+            return;
+          }
+
+          const me = await productService.getMySellerRow();
+          if (!me.ok) {
+            safeText(els.formMsg, me?.error?.message || "Could not identify seller.");
+            return;
+          }
+
+          const up = await storageService.uploadImages({
+            sellerId: me.seller?.id,
+            productId: product_id || null,
+            files,
+          });
+
+          if (!up.ok) {
+            safeText(els.formMsg, up?.error?.message || "Image upload failed.");
+            return;
+          }
+
+          image_urls.push(...(up.urls || []));
+        }
 
         const payload = {
           title,
@@ -258,19 +282,17 @@
         };
 
         let res;
-        if (product_id) {
-          res = await productService.updateProduct(product_id, payload);
-        } else {
-          res = await productService.createProduct(payload);
-        }
+        if (product_id) res = await productService.updateProduct(product_id, payload);
+        else res = await productService.createProduct(payload);
 
         if (!res.ok) {
           safeText(els.formMsg, res?.error?.message || "Save failed.");
-          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
+        if (els.images) els.images.value = ""; // ✅ clear file input
         safeText(els.formMsg, product_id ? "✅ Changes saved." : "✅ Product created.");
+
         clearEditMode();
         await renderList();
       } catch (err) {
@@ -289,7 +311,6 @@
       const id = btn.dataset.id;
       if (!action || !id) return;
 
-      // -------- TRASH actions ----------
       if (action === "restore") {
         const res = await productService.restoreProduct(id);
         if (!res.ok) alert(res?.error?.message || "Restore failed.");
@@ -299,7 +320,6 @@
       }
 
       if (action === "purge") {
-        // triple safety: only in trash mode
         if (!showTrash) return;
 
         const first = confirm("Delete permanently? This cannot be undone.");
@@ -318,9 +338,8 @@
         return;
       }
 
-      // -------- NORMAL actions ----------
       if (action === "edit") {
-        if (showTrash) return; // no edit in trash
+        if (showTrash) return;
         const p = cachedProducts.find((x) => x.id === id);
         if (!p) return;
         setEditMode(p);
