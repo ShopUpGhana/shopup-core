@@ -2,112 +2,130 @@
 (function () {
   "use strict";
 
-  function create({ supabaseClient, logger }) {
-    const SCHEMA = "shopup_core";
+  function create({ supabaseClient, logger, schema }) {
+    const SCHEMA = schema || "shopup_core";
 
-    function db() {
-      return supabaseClient.schema(SCHEMA).from("products");
+    function nowIso() {
+      return new Date().toISOString();
     }
 
-    async function listMyProducts({ sellerId }) {
-      const { data, error } = await db()
-        .select(`
-          id,
-          title,
-          price_ghs,
-          currency,
-          status,
-          is_available,
-          is_deleted,
-          campus:campuses!left(name, city),
-          created_at,
-          updated_at
-        `)
-        .eq("seller_id", sellerId)
-        .eq("is_deleted", false)
-        .order("created_at", { ascending: false });
+    async function listProductsBySeller({ sellerId, includeDeleted = false }) {
+      try {
+        const q = supabaseClient
+          .schema(SCHEMA)
+          .from("products")
+          .select(
+            `
+            id,
+            seller_id,
+            campus_id,
+            title,
+            description,
+            category,
+            price_ghs,
+            currency,
+            status,
+            is_available,
+            image_urls,
+            is_deleted,
+            deleted_at,
+            created_at,
+            updated_at,
+            campus:campuses!left(name, city)
+          `
+          )
+          .eq("seller_id", sellerId)
+          .eq("is_deleted", !!includeDeleted)
+          .order(includeDeleted ? "deleted_at" : "created_at", { ascending: false });
 
-      if (error) return { ok: false, error };
-      return { ok: true, data: data || [] };
+        const { data, error } = await q;
+        if (error) return { ok: false, error };
+        return { ok: true, data: data || [] };
+      } catch (e) {
+        logger?.error?.("[supabaseProductRepo] listProductsBySeller error", e);
+        return { ok: false, error: { message: "Failed to load products." } };
+      }
     }
 
-    async function createProduct({ sellerId, input }) {
-      const payload = {
-        seller_id: sellerId,
-        campus_id: input.campus_id || null,
-        title: input.title,
-        description: input.description || null,
-        category: input.category || null,
-        price_ghs: input.price_ghs,
-        currency: input.currency || "GHS",
-        status: input.status || "draft",
-        is_available: typeof input.is_available === "boolean" ? input.is_available : true,
-        image_urls: Array.isArray(input.image_urls) ? input.image_urls : [],
-        is_deleted: false,
-        deleted_at: null,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { data, error } = await db().insert(payload).select("*").single();
-      if (error) return { ok: false, error };
-      return { ok: true, data };
-    }
-
-    async function updateProduct({ sellerId, productId, input }) {
-      const patch = {
-        campus_id: input.campus_id || null,
-        title: input.title,
-        description: input.description || null,
-        category: input.category || null,
-        price_ghs: input.price_ghs,
-        currency: input.currency || "GHS",
-        status: input.status || "draft",
-        is_available: typeof input.is_available === "boolean" ? input.is_available : true,
-        image_urls: Array.isArray(input.image_urls) ? input.image_urls : [],
-        updated_at: new Date().toISOString(),
-      };
-
-      const { data, error } = await db()
-        .update(patch)
-        .eq("id", productId)
-        .eq("seller_id", sellerId)
-        .eq("is_deleted", false)
-        .select("*")
-        .single();
-
-      if (error) return { ok: false, error };
-      return { ok: true, data };
-    }
-
-    // ✅ SOFT DELETE (no hard delete)
+    // ✅ Soft delete (safe)
     async function deleteProduct({ sellerId, productId }) {
-      const { error } = await db()
-        .update({ is_deleted: true, deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq("id", productId)
-        .eq("seller_id", sellerId)
-        .eq("is_deleted", false);
+      try {
+        const { error } = await supabaseClient
+          .schema(SCHEMA)
+          .from("products")
+          .update({
+            is_deleted: true,
+            deleted_at: nowIso(),
+            updated_at: nowIso(),
+          })
+          .eq("id", productId)
+          .eq("seller_id", sellerId)
+          .eq("is_deleted", false);
 
-      if (error) return { ok: false, error };
-      return { ok: true };
+        if (error) return { ok: false, error };
+        return { ok: true };
+      } catch (e) {
+        logger?.error?.("[supabaseProductRepo] deleteProduct error", e);
+        return { ok: false, error: { message: "Soft delete failed." } };
+      }
     }
 
-    // Optional: restore
     async function restoreProduct({ sellerId, productId }) {
-      const { error } = await db()
-        .update({ is_deleted: false, deleted_at: null, updated_at: new Date().toISOString() })
-        .eq("id", productId)
-        .eq("seller_id", sellerId);
+      try {
+        const { error } = await supabaseClient
+          .schema(SCHEMA)
+          .from("products")
+          .update({
+            is_deleted: false,
+            deleted_at: null,
+            updated_at: nowIso(),
+          })
+          .eq("id", productId)
+          .eq("seller_id", sellerId)
+          .eq("is_deleted", true);
 
-      if (error) return { ok: false, error };
-      return { ok: true };
+        if (error) return { ok: false, error };
+        return { ok: true };
+      } catch (e) {
+        logger?.error?.("[supabaseProductRepo] restoreProduct error", e);
+        return { ok: false, error: { message: "Restore failed." } };
+      }
+    }
+
+    // ✅ Permanent delete (BLOCKED by default unless confirm=true)
+    async function deleteProductPermanently({ sellerId, productId, confirm }) {
+      if (confirm !== true) {
+        return {
+          ok: false,
+          error: {
+            message:
+              "Permanent delete is disabled by default. Pass { confirm: true } to enable.",
+          },
+        };
+      }
+
+      try {
+        const { error } = await supabaseClient
+          .schema(SCHEMA)
+          .from("products")
+          .delete()
+          .eq("id", productId)
+          .eq("seller_id", sellerId)
+          .eq("is_deleted", true); // only delete if already in trash
+
+        if (error) return { ok: false, error };
+        return { ok: true };
+      } catch (e) {
+        logger?.error?.("[supabaseProductRepo] deleteProductPermanently error", e);
+        return { ok: false, error: { message: "Permanent delete failed." } };
+      }
     }
 
     return {
-      listMyProducts,
-      createProduct,
-      updateProduct,
+      listProductsBySeller,
       deleteProduct,
       restoreProduct,
+      deleteProductPermanently,
     };
   }
 
