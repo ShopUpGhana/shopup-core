@@ -5,27 +5,52 @@
   function create({ supabaseClient, logger, schemaName }) {
     const SCHEMA = schemaName || "shopup_core";
 
+    async function getAuthUid() {
+      const { data, error } = await supabaseClient.auth.getUser();
+      if (error) return { ok: false, error };
+      const uid = data?.user?.id || null;
+      if (!uid) return { ok: false, error: { message: "Not logged in." } };
+      return { ok: true, uid };
+    }
+
+    // ✅ ENTERPRISE-SAFE:
+    // Tries sellers.user_id == auth.uid() first (recommended)
+    // If your sellers table uses sellers.id == auth.uid(), it falls back automatically.
     async function getMySellerRow() {
       try {
-        const { data: userRes, error: userErr } = await supabaseClient.auth.getUser();
-        if (userErr) return { ok: false, error: userErr };
+        const u = await getAuthUid();
+        if (!u.ok) return u;
 
-        const uid = userRes?.user?.id;
-        if (!uid) return { ok: false, error: { message: "Not logged in." } };
+        const uid = u.uid;
 
-        // Assumes you have a sellers table linked to auth user id.
-        // If your column is different, adjust below.
-        const { data, error } = await supabaseClient
-          .schema(SCHEMA)
-          .from("sellers")
-          .select("id, user_id, name, email")
-          .eq("user_id", uid)
-          .maybeSingle();
+        // 1) Preferred: sellers.user_id
+        {
+          const { data, error } = await supabaseClient
+            .schema(SCHEMA)
+            .from("sellers")
+            .select("id, user_id, name, email")
+            .eq("user_id", uid)
+            .maybeSingle();
 
-        if (error) return { ok: false, error };
-        if (!data) return { ok: false, error: { message: "Seller profile not found." } };
+          // If this fails because user_id column doesn't exist, PostgREST returns 400.
+          // We'll fall back to sellers.id below.
+          if (!error && data) return { ok: true, seller: data };
+        }
 
-        return { ok: true, seller: data };
+        // 2) Fallback: sellers.id == auth.uid()
+        {
+          const { data, error } = await supabaseClient
+            .schema(SCHEMA)
+            .from("sellers")
+            .select("id, user_id, name, email")
+            .eq("id", uid)
+            .maybeSingle();
+
+          if (error) return { ok: false, error };
+          if (!data) return { ok: false, error: { message: "Seller profile not found." } };
+
+          return { ok: true, seller: data };
+        }
       } catch (e) {
         logger?.error?.("[ShopUp] getMySellerRow error", e);
         return { ok: false, error: { message: "Could not identify seller." } };
@@ -204,7 +229,6 @@
       return { ok: true };
     }
 
-    // Permanent delete (only use in Trash UI)
     async function deleteProductPermanently(productId, confirmFlag) {
       if (!confirmFlag) return { ok: false, error: { message: "Confirmation required." } };
 
