@@ -37,6 +37,8 @@
       a { color:#8ab4ff; }
       .pill { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); font-size:12px; opacity:.95; }
       code { opacity:.9; }
+      .thumbs { display:flex; gap:6px; flex-wrap:wrap; }
+      .thumbs img { width:34px; height:34px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,.12); }
     </style>
   </head>
 
@@ -108,13 +110,14 @@
             <div>
               <label for="image_urls">Image URLs (comma-separated)</label>
               <input id="image_urls" name="image_urls" placeholder="https://... , https://..." />
-
-              <label for="images">Upload images (optional)</label>
-              <input id="images" name="images" type="file" accept="image/*" multiple />
-              <div class="muted" style="font-size:12px;margin-top:6px;">
-                You can upload multiple images. They will be saved into Supabase Storage and added to image_urls automatically.
-              </div>
             </div>
+          </div>
+
+          <!-- Upload input (STRICT storage upload) -->
+          <label for="images">Upload images (optional)</label>
+          <input id="images" name="images" type="file" accept="image/*" multiple />
+          <div class="muted" style="font-size:12px;margin-top:6px;">
+            You can upload multiple images. They will be saved into Supabase Storage and added to image_urls automatically.
           </div>
 
           <button id="createBtn" type="submit">Create product</button>
@@ -142,7 +145,8 @@
                 <th>Status</th>
                 <th>Available</th>
                 <th>Campus</th>
-                <th style="width:180px;">Actions</th>
+                <th>Images</th>
+                <th style="width:220px;">Actions</th>
               </tr>
             </thead>
             <tbody id="productsTbody"></tbody>
@@ -161,7 +165,7 @@
     <script src="js/core/container.js"></script>
     <script src="js/core/result.js"></script>
 
-    <!-- 4) Services (storageService MUST be before app.bootstrap.js) -->
+    <!-- 4) Services -->
     <script src="js/features/auth/authService.js"></script>
     <script src="js/features/products/productService.js"></script>
     <script src="js/features/storage/storageService.js"></script>
