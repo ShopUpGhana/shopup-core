@@ -35,7 +35,9 @@
       els.avail = document.querySelector("#is_available");
       els.status = document.querySelector("#status");
       els.imageUrls = document.querySelector("#image_urls");
-      els.images = document.querySelector("#images"); // ✅ file input
+
+      // file input
+      els.images = document.querySelector("#images");
     }
 
     function safeText(el, text) {
@@ -54,7 +56,6 @@
 
     async function loadCampuses() {
       if (!els.campusSelect) return;
-
       els.campusSelect.innerHTML = `<option value="">Loading campuses...</option>`;
 
       const res = await productService.listCampuses();
@@ -90,21 +91,12 @@
 
     function campusLabelFromProduct(p) {
       return p.campus
-        ? p.campus.city
-          ? `${p.campus.name} — ${p.campus.city}`
-          : p.campus.name
+        ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
         : "All campuses";
     }
 
-    function formatDateShort(iso) {
-      if (!iso) return "";
-      const d = new Date(iso);
-      if (!isFinite(d.getTime())) return "";
-      return d.toLocaleString();
-    }
-
     function setEditMode(product) {
-      if (!product || showTrash) return;
+      if (!product) return;
 
       if (els.productId) els.productId.value = product.id;
       if (els.title) els.title.value = product.title || "";
@@ -114,6 +106,7 @@
       if (els.avail) els.avail.value = String(!!product.is_available);
       if (els.status) els.status.value = String(product.status || "draft");
 
+      // show urls only in the text input (paths are internal)
       if (els.imageUrls) {
         els.imageUrls.value = Array.isArray(product.image_urls) ? product.image_urls.join(", ") : "";
       }
@@ -123,7 +116,6 @@
       }
 
       if (els.images) els.images.value = "";
-
       if (els.createBtn) els.createBtn.textContent = "Save changes";
       safeText(els.formMsg, `Editing: ${product.title || "product"}`);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -135,6 +127,29 @@
       if (els.images) els.images.value = "";
       if (els.createBtn) els.createBtn.textContent = "Create product";
       safeText(els.formMsg, "");
+    }
+
+    function setTrashButtonUi() {
+      if (!els.trashBtn) return;
+      els.trashBtn.textContent = showTrash ? "Back" : "Trash";
+    }
+
+    async function signThumbs(rows) {
+      // Create a signed URL for the first image path (thumbnail)
+      // Returns map: path -> signedUrl
+      const paths = rows
+        .map((p) => (Array.isArray(p.image_paths) ? p.image_paths[0] : null))
+        .filter(Boolean);
+
+      const unique = Array.from(new Set(paths));
+      if (!unique.length) return {};
+
+      const res = await storageService.createSignedUrls({ paths: unique, expiresIn: 1800 });
+      if (!res.ok) return {};
+
+      const map = {};
+      for (let i = 0; i < unique.length; i++) map[unique[i]] = res.urls[i];
+      return map;
     }
 
     async function renderList() {
@@ -154,17 +169,32 @@
       cachedProducts = rows;
 
       if (!rows.length) {
-        safeText(els.listMsg, showTrash ? "Trash is empty." : "No products yet. Create your first product above.");
+        safeText(
+          els.listMsg,
+          showTrash ? "Trash is empty." : "No products yet. Create your first product above."
+        );
         return;
       }
 
-      safeText(els.listMsg, showTrash ? `Trash: ${rows.length} item(s).` : `Loaded ${rows.length} product(s).`);
+      // Signed thumbs for seller dashboard (private bucket)
+      const thumbMap = await signThumbs(rows);
+
+      safeText(
+        els.listMsg,
+        showTrash ? `Trash: ${rows.length} item(s).` : `Loaded ${rows.length} product(s).`
+      );
 
       rows.forEach((p) => {
         const tr = document.createElement("tr");
+
         const status = String(p.status || "draft");
         const avail = !!p.is_available;
         const campusLabel = campusLabelFromProduct(p);
+
+        const firstPath = Array.isArray(p.image_paths) ? p.image_paths[0] : null;
+        const thumbUrl =
+          (Array.isArray(p.image_urls) && p.image_urls[0]) ||
+          (firstPath ? thumbMap[firstPath] : "");
 
         const actionsHtml = showTrash
           ? `
@@ -182,10 +212,13 @@
             <button class="danger" data-action="del" data-id="${p.id}">Delete</button>
           `;
 
-        const titleTip = showTrash && p.deleted_at ? `Deleted: ${formatDateShort(p.deleted_at)}` : "";
+        // Simple thumbnail inside the Title cell (keeps table unchanged)
+        const thumbHtml = thumbUrl
+          ? `<img src="${escapeHtml(thumbUrl)}" alt="" style="width:34px;height:34px;object-fit:cover;border-radius:8px;vertical-align:middle;margin-right:10px;border:1px solid rgba(255,255,255,.10);" />`
+          : `<span class="pill" style="margin-right:10px;">No image</span>`;
 
         tr.innerHTML = `
-          <td title="${escapeHtml(titleTip)}">${escapeHtml(p.title || "—")}</td>
+          <td>${thumbHtml}${escapeHtml(p.title || "—")}</td>
           <td>${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</td>
           <td><span class="pill">${escapeHtml(status)}</span></td>
           <td>${avail ? "✅" : "—"}</td>
@@ -233,25 +266,27 @@
           return;
         }
 
-        // Start with whatever user typed
+        // Manual URLs (optional)
         const image_urls =
           image_urls_raw.length
             ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
             : [];
 
-        // ✅ Upload selected images (optional) and append URLs
-        const me = await productService.getMySellerRow();
-        if (!me.ok) {
-          safeText(els.formMsg, me?.error?.message || "Could not identify seller.");
-          if (els.createBtn) els.createBtn.disabled = false;
-          return;
+        // Load current product (if editing) so we can preserve existing image_paths
+        let existingPaths = [];
+        if (product_id) {
+          const existing = cachedProducts.find((x) => x.id === product_id);
+          existingPaths = Array.isArray(existing?.image_paths) ? existing.image_paths : [];
         }
 
+        // Upload selected files (STRICT path => auth.uid folder)
         const files = els.images?.files;
+        let uploadedPaths = [];
+        let uploadedUrls = [];
+
         if (files && files.length) {
           const up = await storageService.uploadImages({
-            sellerId: me.seller?.id,
-            productId: product_id || null,
+            productId: product_id || "new",
             files,
           });
 
@@ -261,10 +296,16 @@
             return;
           }
 
-          image_urls.push(...(up.urls || []));
-          // Reflect combined URLs back into the input (nice UX)
-          if (els.imageUrls) els.imageUrls.value = image_urls.join(", ");
+          uploadedPaths = up.paths || [];
+          uploadedUrls = up.urls || [];
         }
+
+        // Enterprise: store paths always
+        const image_paths = [...existingPaths, ...uploadedPaths];
+
+        // Keep image_urls as a “cache” (optional). For private bucket, urls may be empty.
+        // We keep any manual URLs + any public URLs returned (if bucket is public).
+        const final_urls = [...image_urls, ...uploadedUrls];
 
         const payload = {
           title,
@@ -275,7 +316,8 @@
           currency: "GHS",
           status,
           is_available,
-          image_urls,
+          image_urls: final_urls,
+          image_paths,
         };
 
         let res;
@@ -310,7 +352,6 @@
       const id = btn.dataset.id;
       if (!action || !id) return;
 
-      // Trash actions
       if (action === "restore") {
         const res = await productService.restoreProduct(id);
         if (!res.ok) alert(res?.error?.message || "Restore failed.");
@@ -321,24 +362,20 @@
 
       if (action === "purge") {
         if (!showTrash) return;
-
         const first = confirm("Delete permanently? This cannot be undone.");
         if (!first) return;
-
         const second = prompt('Type DELETE to permanently remove this item:');
         if (String(second || "").trim().toUpperCase() !== "DELETE") {
           alert("Cancelled.");
           return;
         }
-
-        const res = await productService.deleteProductPermanently(id);
+        const res = await productService.deleteProductPermanently(id, true);
         if (!res.ok) alert(res?.error?.message || "Permanent delete failed.");
         clearEditMode();
         await renderList();
         return;
       }
 
-      // Normal actions
       if (action === "edit") {
         if (showTrash) return;
         const p = cachedProducts.find((x) => x.id === id);
@@ -350,7 +387,6 @@
       if (action === "del") {
         if (showTrash) return;
         if (!confirm("Delete this product? (soft delete)")) return;
-
         const res = await productService.deleteProduct(id);
         if (!res.ok) alert(res?.error?.message || "Delete failed.");
         clearEditMode();
@@ -370,18 +406,14 @@
       if (action === "pub") {
         if (showTrash) return;
         const status = btn.dataset.status;
-        const res = status === "published"
-          ? await productService.unpublish(id)
-          : await productService.publish(id);
+        const res =
+          status === "published"
+            ? await productService.unpublish(id)
+            : await productService.publish(id);
 
         if (!res.ok) alert(res?.error?.message || "Update failed.");
         await renderList();
       }
-    }
-
-    function setTrashButtonUi() {
-      if (!els.trashBtn) return;
-      els.trashBtn.textContent = showTrash ? "Back" : "Trash";
     }
 
     function start() {
