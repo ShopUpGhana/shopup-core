@@ -1,0 +1,69 @@
+<!-- /campus.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ShopUp • Campus Marketplace</title>
+
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; padding:24px; background:#0b1220; color:#e8eefc; }
+      .wrap { max-width: 1100px; margin: 0 auto; }
+      .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+      .card { background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:18px; margin-top:14px; }
+      h1 { margin:0; font-size:22px; }
+      .muted { opacity:.8; }
+      select, input {
+        padding:10px 12px; border-radius:10px;
+        border:1px solid rgba(255,255,255,.12); background:#0b1220; color:#e8eefc;
+      }
+      .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:12px; }
+      @media (max-width: 980px){ .grid { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 560px){ .grid { grid-template-columns: 1fr; } }
+      .p { background:#0f1830; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:14px; }
+      .img { width:100%; height:160px; border-radius:12px; border:1px solid rgba(255,255,255,.12); object-fit:cover; background:#0b1220; }
+      .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+      .price { font-weight:700; }
+      .pill { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); font-size:12px; opacity:.95; }
+      button { padding:10px 12px; border-radius:10px; border:0; background:#2d6cff; color:white; font-weight:600; cursor:pointer; }
+      button.secondary { background:transparent; border:1px solid rgba(255,255,255,.16); }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <div class="top">
+        <div>
+          <h1>Campus Marketplace</h1>
+          <div class="muted">Browse published products. Images are served via signed URLs (private bucket).</div>
+        </div>
+        <div class="row">
+          <select id="campusFilter">
+            <option value="">All campuses</option>
+          </select>
+          <button id="refreshBtn" class="secondary" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="msg" class="muted">Loading…</div>
+        <div id="grid" class="grid"></div>
+      </div>
+    </div>
+
+    <!-- Supabase SDK -->
+    <script src="js/vendor/supabase.js"></script>
+    <script src="js/supabase-config.js"></script>
+
+    <!-- Core DI -->
+    <script src="js/core/container.js"></script>
+
+    <!-- Services -->
+    <script src="js/features/products/publicProductService.js"></script>
+
+    <!-- Bootstraps -->
+    <script src="js/bootstrap/public.bootstrap.js"></script>
+    <script src="js/controllers/campus-feed.controller.js"></script>
+    <script src="js/bootstrap/campus-feed.bootstrap.js"></script>
+  </body>
+</html>
