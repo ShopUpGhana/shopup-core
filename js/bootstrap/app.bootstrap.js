@@ -23,8 +23,8 @@
       const config = cc.resolve("config");
       const logger = cc.resolve("logger");
 
-      if (!window.supabase || !window.supabase.createClient) {
-        throw new Error("[ShopUp] Supabase SDK not loaded. Include supabase-js@2 before app.bootstrap.js");
+      if (!window.supabase || typeof window.supabase.createClient !== "function") {
+        throw new Error("[ShopUp] Supabase SDK not loaded. Load js/vendor/supabase.js before app.bootstrap.js");
       }
 
       const url = config?.SUPABASE_URL || config?.supabaseUrl;
@@ -47,7 +47,6 @@
 
   // -----------------------------
   // Storage Service (product image uploads)
-  // ✅ MUST be registered OUTSIDE the supabaseClient factory.
   // -----------------------------
   if (window.ShopUpStorageService && window.ShopUpStorageService.create) {
     c.register(
@@ -63,7 +62,7 @@
   }
 
   // -----------------------------
-  // Auth Adapter (NO extra dependency file)
+  // Auth Adapter
   // -----------------------------
   c.register(
     "authAdapter",
@@ -81,7 +80,7 @@
   );
 
   // -----------------------------
-  // Auth Service (required)
+  // Auth Service
   // -----------------------------
   if (!window.ShopUpAuthService || !window.ShopUpAuthService.create) {
     throw new Error("[ShopUp] ShopUpAuthService not loaded. Include /js/features/auth/authService.js");
@@ -98,7 +97,7 @@
   );
 
   // -----------------------------
-  // Seller Service (optional)
+  // Seller Service (if present)
   // -----------------------------
   if (window.ShopUpSellerService && window.ShopUpSellerService.create) {
     c.register(
@@ -113,7 +112,7 @@
   }
 
   // -----------------------------
-  // Product Service (required for products page)
+  // Product Service
   // -----------------------------
   if (window.ShopUpProductService && window.ShopUpProductService.create) {
     c.register(
