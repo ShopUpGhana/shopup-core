@@ -23,8 +23,8 @@
       const config = cc.resolve("config");
       const logger = cc.resolve("logger");
 
-      if (!window.supabase || !window.supabase.createClient) {
-        throw new Error("[ShopUp] Supabase SDK not loaded. Include supabase-js@2 before app.bootstrap.js");
+      if (!window.supabase || typeof window.supabase.createClient !== "function") {
+        throw new Error("[ShopUp] Supabase SDK not loaded. Include supabase.js before app.bootstrap.js");
       }
 
       const url = config?.SUPABASE_URL || config?.supabaseUrl;
@@ -46,23 +46,7 @@
   c.register("dbSchema", () => "shopup_core", { singleton: true });
 
   // -----------------------------
-  // Storage Service (singleton)
-  // -----------------------------
-  if (window.ShopUpStorageService && window.ShopUpStorageService.create) {
-    c.register(
-      "storageService",
-      (cc) =>
-        window.ShopUpStorageService.create({
-          supabaseClient: cc.resolve("supabaseClient"),
-          logger: cc.resolve("logger"),
-          bucketName: "product-images",
-        }),
-      { singleton: true }
-    );
-  }
-
-  // -----------------------------
-  // Auth Adapter (no extra file needed)
+  // Auth Adapter (no extra dependency file)
   // -----------------------------
   c.register(
     "authAdapter",
@@ -80,7 +64,7 @@
   );
 
   // -----------------------------
-  // Auth Service
+  // Auth Service (required)
   // -----------------------------
   if (!window.ShopUpAuthService || !window.ShopUpAuthService.create) {
     throw new Error("[ShopUp] ShopUpAuthService not loaded. Include /js/features/auth/authService.js");
@@ -97,15 +81,17 @@
   );
 
   // -----------------------------
-  // Seller Service (optional)
+  // Storage Service (STRICT uploads)
   // -----------------------------
-  if (window.ShopUpSellerService && window.ShopUpSellerService.create) {
+  if (window.ShopUpStorageService && window.ShopUpStorageService.create) {
     c.register(
-      "sellerService",
+      "storageService",
       (cc) =>
-        window.ShopUpSellerService.create({
+        window.ShopUpStorageService.create({
           supabaseClient: cc.resolve("supabaseClient"),
           logger: cc.resolve("logger"),
+          bucketName: "product-images",
+          signedUrlExpiresIn: 60 * 60, // 1 hour signed URLs
         }),
       { singleton: true }
     );
@@ -121,7 +107,23 @@
         window.ShopUpProductService.create({
           supabaseClient: cc.resolve("supabaseClient"),
           logger: cc.resolve("logger"),
-          schemaName: cc.resolve("dbSchema"),
+          schema: cc.resolve("dbSchema"),
+        }),
+      { singleton: true }
+    );
+  }
+
+  // -----------------------------
+  // Seller Service (optional)
+  // -----------------------------
+  if (window.ShopUpSellerService && window.ShopUpSellerService.create) {
+    c.register(
+      "sellerService",
+      (cc) =>
+        window.ShopUpSellerService.create({
+          supabaseClient: cc.resolve("supabaseClient"),
+          logger: cc.resolve("logger"),
+          schema: cc.resolve("dbSchema"),
         }),
       { singleton: true }
     );
