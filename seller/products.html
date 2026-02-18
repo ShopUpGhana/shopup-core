@@ -109,7 +109,6 @@
               <label for="image_urls">Image URLs (comma-separated)</label>
               <input id="image_urls" name="image_urls" placeholder="https://... , https://..." />
 
-              <!-- ✅ NEW: uploads (keep image_urls input — we will append uploads into it) -->
               <label for="images">Upload images (optional)</label>
               <input id="images" name="images" type="file" accept="image/*" multiple />
               <div class="muted" style="font-size:12px;margin-top:6px;">
@@ -124,7 +123,6 @@
       </div>
 
       <div class="card">
-        <!-- ✅ FIXED: Trash + Refresh BOTH -->
         <div class="top" style="margin-bottom:10px;">
           <h1>My product list</h1>
           <div class="row">
@@ -144,7 +142,7 @@
                 <th>Status</th>
                 <th>Available</th>
                 <th>Campus</th>
-                <th style="width:220px;">Actions</th>
+                <th style="width:180px;">Actions</th>
               </tr>
             </thead>
             <tbody id="productsTbody"></tbody>
@@ -153,7 +151,7 @@
       </div>
     </div>
 
-    <!-- 1) Supabase SDK (local UMD build) -->
+    <!-- 1) Supabase SDK -->
     <script src="js/vendor/supabase.js"></script>
 
     <!-- 2) Config -->
@@ -163,7 +161,7 @@
     <script src="js/core/container.js"></script>
     <script src="js/core/result.js"></script>
 
-    <!-- 4) Services -->
+    <!-- 4) Services used by bootstrap (load storageService BEFORE app.bootstrap.js) -->
     <script src="js/features/auth/authService.js"></script>
     <script src="js/features/products/productService.js"></script>
     <script src="js/features/storage/storageService.js"></script>
