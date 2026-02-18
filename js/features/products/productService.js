@@ -5,10 +5,6 @@
   function create({ supabaseClient, logger }) {
     const SCHEMA = "shopup_core";
 
-    function nowIso() {
-      return new Date().toISOString();
-    }
-
     async function getAuthUser() {
       const { data, error } = await supabaseClient.auth.getUser();
       if (error) return { ok: false, error };
@@ -50,7 +46,6 @@
       }
     }
 
-    // ✅ Normal list (hides deleted)
     async function listMyProducts() {
       const me = await getMySellerRow();
       if (!me.ok) return me;
@@ -60,8 +55,7 @@
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .select(
-          `
+        .select(`
           id,
           seller_id,
           campus_id,
@@ -73,13 +67,10 @@
           status,
           is_available,
           image_urls,
-          is_deleted,
-          deleted_at,
+          campus:campuses!left(name, city),
           created_at,
-          updated_at,
-          campus:campuses!left(name, city)
-        `
-        )
+          updated_at
+        `)
         .eq("seller_id", seller.id)
         .eq("is_deleted", false)
         .order("created_at", { ascending: false });
@@ -88,7 +79,6 @@
       return { ok: true, data: data || [], seller };
     }
 
-    // ✅ Trash list (only deleted)
     async function listMyDeletedProducts() {
       const me = await getMySellerRow();
       if (!me.ok) return me;
@@ -98,8 +88,7 @@
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .select(
-          `
+        .select(`
           id,
           seller_id,
           campus_id,
@@ -111,13 +100,11 @@
           status,
           is_available,
           image_urls,
-          is_deleted,
+          campus:campuses!left(name, city),
           deleted_at,
           created_at,
-          updated_at,
-          campus:campuses!left(name, city)
-        `
-        )
+          updated_at
+        `)
         .eq("seller_id", seller.id)
         .eq("is_deleted", true)
         .order("deleted_at", { ascending: false });
@@ -145,7 +132,7 @@
         image_urls: Array.isArray(input.image_urls) ? input.image_urls : [],
         is_deleted: false,
         deleted_at: null,
-        updated_at: nowIso(),
+        updated_at: new Date().toISOString(),
       };
 
       const { data, error } = await supabaseClient
@@ -159,14 +146,13 @@
       return { ok: true, data };
     }
 
-    // ✅ Edit/update (blocked if deleted)
     async function updateProduct(productId, input) {
       const me = await getMySellerRow();
       if (!me.ok) return me;
 
       const { seller } = me;
 
-      const patch = {
+      const payload = {
         campus_id: input.campus_id || null,
         title: input.title,
         description: input.description || null,
@@ -176,13 +162,13 @@
         status: input.status || "draft",
         is_available: typeof input.is_available === "boolean" ? input.is_available : true,
         image_urls: Array.isArray(input.image_urls) ? input.image_urls : [],
-        updated_at: nowIso(),
+        updated_at: new Date().toISOString(),
       };
 
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .update(patch)
+        .update(payload)
         .eq("id", productId)
         .eq("seller_id", seller.id)
         .eq("is_deleted", false)
@@ -193,7 +179,7 @@
       return { ok: true, data };
     }
 
-    // ✅ Soft delete
+    // ✅ Soft delete (no more .delete())
     async function deleteProduct(productId) {
       const me = await getMySellerRow();
       if (!me.ok) return me;
@@ -205,8 +191,8 @@
         .from("products")
         .update({
           is_deleted: true,
-          deleted_at: nowIso(),
-          updated_at: nowIso(),
+          deleted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", productId)
         .eq("seller_id", seller.id)
@@ -216,7 +202,6 @@
       return { ok: true };
     }
 
-    // ✅ Restore from trash
     async function restoreProduct(productId) {
       const me = await getMySellerRow();
       if (!me.ok) return me;
@@ -229,7 +214,7 @@
         .update({
           is_deleted: false,
           deleted_at: null,
-          updated_at: nowIso(),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", productId)
         .eq("seller_id", seller.id)
@@ -239,15 +224,8 @@
       return { ok: true };
     }
 
-    // ✅ Permanent delete (DISABLED by default unless confirm=true)
-    async function deleteProductPermanently(productId, confirm) {
-      if (confirm !== true) {
-        return {
-          ok: false,
-          error: { message: "Permanent delete is disabled. Pass confirm=true to proceed." },
-        };
-      }
-
+    // ✅ Permanent delete (only used from Trash screen)
+    async function deleteProductPermanently(productId) {
       const me = await getMySellerRow();
       if (!me.ok) return me;
 
@@ -274,7 +252,7 @@
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .update({ is_available: !!is_available, updated_at: nowIso() })
+        .update({ is_available, updated_at: new Date().toISOString() })
         .eq("id", productId)
         .eq("seller_id", seller.id)
         .eq("is_deleted", false);
@@ -292,7 +270,7 @@
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .update({ status: "published", updated_at: nowIso() })
+        .update({ status: "published", updated_at: new Date().toISOString() })
         .eq("id", productId)
         .eq("seller_id", seller.id)
         .eq("is_deleted", false);
@@ -310,7 +288,7 @@
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .update({ status: "draft", updated_at: nowIso() })
+        .update({ status: "draft", updated_at: new Date().toISOString() })
         .eq("id", productId)
         .eq("seller_id", seller.id)
         .eq("is_deleted", false);
@@ -327,7 +305,7 @@
       updateProduct,
       deleteProduct,
       restoreProduct,
-      deleteProductPermanently, // disabled unless confirm=true
+      deleteProductPermanently,
       toggleAvailability,
       publish,
       unpublish,
