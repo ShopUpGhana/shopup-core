@@ -12,50 +12,81 @@
     }
 
     function randomId() {
-      return (
-        Date.now().toString(36) +
-        "-" +
-        Math.random().toString(36).slice(2, 10)
-      );
+      return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    }
+
+    function buildObjectPath({ sellerId, productId, fileName }) {
+      const pid = productId || "new";
+      return ["seller", sellerId, "product", pid, `${randomId()}-${safeName(fileName)}`].join("/");
+    }
+
+    function isAlreadyExistsError(err) {
+      const msg = String(err?.message || err?.error || "").toLowerCase();
+      // Supabase storage messages vary; cover common ones
+      return msg.includes("already exists") || msg.includes("duplicate") || msg.includes("exists");
+    }
+
+    async function uploadOne({ sellerId, productId, file }) {
+      const objectPath = buildObjectPath({
+        sellerId,
+        productId,
+        fileName: file?.name || "image",
+      });
+
+      const { error: upErr } = await supabaseClient.storage
+        .from(BUCKET)
+        .upload(objectPath, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file?.type || "image/*",
+        });
+
+      if (!upErr) {
+        const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(objectPath);
+        return { ok: true, url: data?.publicUrl || null };
+      }
+
+      // Retry once if we hit a "file exists" edge case
+      if (isAlreadyExistsError(upErr)) {
+        const retryPath = buildObjectPath({
+          sellerId,
+          productId,
+          fileName: file?.name || "image",
+        });
+
+        const { error: retryErr } = await supabaseClient.storage
+          .from(BUCKET)
+          .upload(retryPath, file, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: file?.type || "image/*",
+          });
+
+        if (retryErr) return { ok: false, error: retryErr };
+
+        const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(retryPath);
+        return { ok: true, url: data?.publicUrl || null };
+      }
+
+      return { ok: false, error: upErr };
     }
 
     async function uploadImages({ sellerId, productId, files }) {
       try {
         const list = Array.from(files || []).filter(Boolean);
+
         if (!list.length) return { ok: true, urls: [] };
+
+        if (!sellerId) {
+          return { ok: false, error: { message: "Missing sellerId for image upload." } };
+        }
 
         const urls = [];
 
         for (const file of list) {
-          const ext =
-            (file.name && file.name.includes(".") && file.name.split(".").pop()) ||
-            "jpg";
-
-          const pathParts = [
-            "seller",
-            sellerId || "unknown",
-            "product",
-            productId || "new",
-            `${randomId()}-${safeName(file.name || "image")}`,
-          ];
-
-          const objectPath = pathParts.join("/");
-
-          const { error: upErr } = await supabaseClient.storage
-            .from(BUCKET)
-            .upload(objectPath, file, {
-              cacheControl: "3600",
-              upsert: false,
-              contentType: file.type || `image/${ext}`,
-            });
-
-          if (upErr) return { ok: false, error: upErr };
-
-          // Public URL (bucket is public)
-          const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(objectPath);
-          const publicUrl = data?.publicUrl;
-
-          if (publicUrl) urls.push(publicUrl);
+          const one = await uploadOne({ sellerId, productId, file });
+          if (!one.ok) return { ok: false, error: one.error };
+          if (one.url) urls.push(one.url);
         }
 
         return { ok: true, urls };
