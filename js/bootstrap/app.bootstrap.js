@@ -24,9 +24,7 @@
       const logger = cc.resolve("logger");
 
       if (!window.supabase || !window.supabase.createClient) {
-        throw new Error(
-          "[ShopUp] Supabase SDK not loaded. Include supabase-js@2 before app.bootstrap.js"
-        );
+        throw new Error("[ShopUp] Supabase SDK not loaded. Include supabase-js@2 before app.bootstrap.js");
       }
 
       const url = config?.SUPABASE_URL || config?.supabaseUrl;
@@ -48,8 +46,24 @@
   c.register("dbSchema", () => "shopup_core", { singleton: true });
 
   // -----------------------------
+  // Storage Service (product image uploads)
+  // ✅ MUST be registered OUTSIDE the supabaseClient factory.
+  // -----------------------------
+  if (window.ShopUpStorageService && window.ShopUpStorageService.create) {
+    c.register(
+      "storageService",
+      (cc) =>
+        window.ShopUpStorageService.create({
+          supabaseClient: cc.resolve("supabaseClient"),
+          logger: cc.resolve("logger"),
+          bucketName: "product-images",
+        }),
+      { singleton: true }
+    );
+  }
+
+  // -----------------------------
   // Auth Adapter (NO extra dependency file)
-  // This guarantees authService exists everywhere.
   // -----------------------------
   c.register(
     "authAdapter",
@@ -84,7 +98,7 @@
   );
 
   // -----------------------------
-  // Seller Service (required for register)
+  // Seller Service (optional)
   // -----------------------------
   if (window.ShopUpSellerService && window.ShopUpSellerService.create) {
     c.register(
