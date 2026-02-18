@@ -2,48 +2,45 @@
 (function () {
   "use strict";
 
-  function create({ supabaseClient, logger }) {
-    const SCHEMA = "shopup_core";
-
-    async function getAuthUser() {
-      const { data, error } = await supabaseClient.auth.getUser();
-      if (error) return { ok: false, error };
-      return { ok: true, user: data.user || null };
-    }
+  function create({ supabaseClient, logger, schemaName }) {
+    const SCHEMA = schemaName || "shopup_core";
 
     async function getMySellerRow() {
-      const u = await getAuthUser();
-      if (!u.ok) return u;
-      if (!u.user) return { ok: false, error: { message: "Not logged in" } };
+      try {
+        const { data: userRes, error: userErr } = await supabaseClient.auth.getUser();
+        if (userErr) return { ok: false, error: userErr };
 
-      const { data: seller, error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("sellers")
-        .select("id,user_id,campus_id,status")
-        .eq("user_id", u.user.id)
-        .maybeSingle();
+        const uid = userRes?.user?.id;
+        if (!uid) return { ok: false, error: { message: "Not logged in." } };
 
-      if (error) return { ok: false, error };
-      if (!seller) return { ok: false, error: { message: "Seller profile not found." } };
+        // Assumes you have a sellers table linked to auth user id.
+        // If your column is different, adjust below.
+        const { data, error } = await supabaseClient
+          .schema(SCHEMA)
+          .from("sellers")
+          .select("id, user_id, name, email")
+          .eq("user_id", uid)
+          .maybeSingle();
 
-      return { ok: true, seller, user: u.user };
+        if (error) return { ok: false, error };
+        if (!data) return { ok: false, error: { message: "Seller profile not found." } };
+
+        return { ok: true, seller: data };
+      } catch (e) {
+        logger?.error?.("[ShopUp] getMySellerRow error", e);
+        return { ok: false, error: { message: "Could not identify seller." } };
+      }
     }
 
     async function listCampuses() {
-      try {
-        const { data, error } = await supabaseClient
-          .schema(SCHEMA)
-          .from("campuses")
-          .select("id,name,city,is_active")
-          .eq("is_active", true)
-          .order("name", { ascending: true });
+      const { data, error } = await supabaseClient
+        .schema(SCHEMA)
+        .from("campuses")
+        .select("id, name, city")
+        .order("name", { ascending: true });
 
-        if (error) return { ok: false, error };
-        return { ok: true, data: data || [] };
-      } catch (e) {
-        logger?.error?.("[ShopUp] productService.listCampuses error", e);
-        return { ok: false, error: { message: "Failed to load campuses." } };
-      }
+      if (error) return { ok: false, error };
+      return { ok: true, data: data || [] };
     }
 
     async function listMyProducts() {
@@ -55,10 +52,9 @@
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .select(`
+        .select(
+          `
           id,
-          seller_id,
-          campus_id,
           title,
           description,
           category,
@@ -66,11 +62,14 @@
           currency,
           status,
           is_available,
+          campus_id,
           image_urls,
-          campus:campuses!left(name, city),
+          image_paths,
           created_at,
-          updated_at
-        `)
+          updated_at,
+          campus:campuses!left(name, city)
+        `
+        )
         .eq("seller_id", seller.id)
         .eq("is_deleted", false)
         .order("created_at", { ascending: false });
@@ -88,10 +87,9 @@
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .select(`
+        .select(
+          `
           id,
-          seller_id,
-          campus_id,
           title,
           description,
           category,
@@ -99,12 +97,15 @@
           currency,
           status,
           is_available,
+          campus_id,
           image_urls,
-          campus:campuses!left(name, city),
+          image_paths,
           deleted_at,
           created_at,
-          updated_at
-        `)
+          updated_at,
+          campus:campuses!left(name, city)
+        `
+        )
         .eq("seller_id", seller.id)
         .eq("is_deleted", true)
         .order("deleted_at", { ascending: false });
@@ -113,79 +114,65 @@
       return { ok: true, data: data || [], seller };
     }
 
-    async function createProduct(input) {
+    async function createProduct(payload) {
       const me = await getMySellerRow();
       if (!me.ok) return me;
 
       const { seller } = me;
 
-      const payload = {
+      const insert = {
         seller_id: seller.id,
-        campus_id: input.campus_id || null,
-        title: input.title,
-        description: input.description || null,
-        category: input.category || null,
-        price_ghs: input.price_ghs,
-        currency: input.currency || "GHS",
-        status: input.status || "draft",
-        is_available: typeof input.is_available === "boolean" ? input.is_available : true,
-        image_urls: Array.isArray(input.image_urls) ? input.image_urls : [],
-        is_deleted: false,
-        deleted_at: null,
+        campus_id: payload.campus_id || null,
+        title: payload.title,
+        description: payload.description || null,
+        category: payload.category || null,
+        price_ghs: payload.price_ghs,
+        currency: payload.currency || "GHS",
+        status: payload.status || "draft",
+        is_available: !!payload.is_available,
+        image_urls: Array.isArray(payload.image_urls) ? payload.image_urls : [],
+        image_paths: Array.isArray(payload.image_paths) ? payload.image_paths : [],
         updated_at: new Date().toISOString(),
       };
 
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .insert(payload)
-        .select("*")
+        .insert(insert)
+        .select("id")
         .single();
 
       if (error) return { ok: false, error };
       return { ok: true, data };
     }
 
-    async function updateProduct(productId, input) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
-      const payload = {
-        campus_id: input.campus_id || null,
-        title: input.title,
-        description: input.description || null,
-        category: input.category || null,
-        price_ghs: input.price_ghs,
-        currency: input.currency || "GHS",
-        status: input.status || "draft",
-        is_available: typeof input.is_available === "boolean" ? input.is_available : true,
-        image_urls: Array.isArray(input.image_urls) ? input.image_urls : [],
+    async function updateProduct(productId, payload) {
+      const patch = {
+        campus_id: payload.campus_id || null,
+        title: payload.title,
+        description: payload.description || null,
+        category: payload.category || null,
+        price_ghs: payload.price_ghs,
+        currency: payload.currency || "GHS",
+        status: payload.status || "draft",
+        is_available: !!payload.is_available,
+        image_urls: Array.isArray(payload.image_urls) ? payload.image_urls : [],
+        image_paths: Array.isArray(payload.image_paths) ? payload.image_paths : [],
         updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await supabaseClient
+      const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .update(payload)
+        .update(patch)
         .eq("id", productId)
-        .eq("seller_id", seller.id)
-        .eq("is_deleted", false)
-        .select("*")
-        .single();
+        .eq("is_deleted", false);
 
       if (error) return { ok: false, error };
-      return { ok: true, data };
+      return { ok: true };
     }
 
-    // ✅ Soft delete (no more .delete())
     async function deleteProduct(productId) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
@@ -195,7 +182,6 @@
           updated_at: new Date().toISOString(),
         })
         .eq("id", productId)
-        .eq("seller_id", seller.id)
         .eq("is_deleted", false);
 
       if (error) return { ok: false, error };
@@ -203,11 +189,6 @@
     }
 
     async function restoreProduct(productId) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
@@ -217,44 +198,33 @@
           updated_at: new Date().toISOString(),
         })
         .eq("id", productId)
-        .eq("seller_id", seller.id)
         .eq("is_deleted", true);
 
       if (error) return { ok: false, error };
       return { ok: true };
     }
 
-    // ✅ Permanent delete (only used from Trash screen)
-    async function deleteProductPermanently(productId) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
+    // Permanent delete (only use in Trash UI)
+    async function deleteProductPermanently(productId, confirmFlag) {
+      if (!confirmFlag) return { ok: false, error: { message: "Confirmation required." } };
 
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
         .delete()
         .eq("id", productId)
-        .eq("seller_id", seller.id)
         .eq("is_deleted", true);
 
       if (error) return { ok: false, error };
       return { ok: true };
     }
 
-    async function toggleAvailability(productId, is_available) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
+    async function toggleAvailability(productId, nextValue) {
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
-        .update({ is_available, updated_at: new Date().toISOString() })
+        .update({ is_available: !!nextValue, updated_at: new Date().toISOString() })
         .eq("id", productId)
-        .eq("seller_id", seller.id)
         .eq("is_deleted", false);
 
       if (error) return { ok: false, error };
@@ -262,17 +232,11 @@
     }
 
     async function publish(productId) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
         .update({ status: "published", updated_at: new Date().toISOString() })
         .eq("id", productId)
-        .eq("seller_id", seller.id)
         .eq("is_deleted", false);
 
       if (error) return { ok: false, error };
@@ -280,17 +244,11 @@
     }
 
     async function unpublish(productId) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
         .update({ status: "draft", updated_at: new Date().toISOString() })
         .eq("id", productId)
-        .eq("seller_id", seller.id)
         .eq("is_deleted", false);
 
       if (error) return { ok: false, error };
