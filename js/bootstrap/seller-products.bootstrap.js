@@ -14,7 +14,7 @@
       window.ShopUpSellerProductsController.create({
         productService: cc.resolve("productService"),
         authService: cc.resolve("authService"),
-        storageService: cc.resolve("storageService"),
+        storageService: cc.resolve("storageService"), // ✅ required for uploads
         logger: cc.resolve("logger"),
       }),
     { singleton: true }
