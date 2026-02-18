@@ -11,11 +11,14 @@
     }
 
     const els = {};
-    let cachedProducts = []; // so we can edit without re-query
+    let cachedProducts = []; // current view cache (normal or trash)
+    let showTrash = false;   // view mode
 
     function grabEls() {
       els.logoutBtn = document.querySelector("#logoutBtn");
       els.refreshBtn = document.querySelector("#refreshBtn");
+      els.trashBtn = document.querySelector("#trashBtn");
+
       els.form = document.querySelector("#productForm");
       els.createBtn = document.querySelector("#createBtn");
       els.formMsg = document.querySelector("#formMsg");
@@ -50,6 +53,7 @@
 
     async function loadCampuses() {
       if (!els.campusSelect) return;
+
       els.campusSelect.innerHTML = `<option value="">Loading campuses...</option>`;
 
       const res = await productService.listCampuses();
@@ -89,6 +93,13 @@
         : "All campuses";
     }
 
+    function formatDateShort(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (!isFinite(d.getTime())) return "";
+      return d.toLocaleString();
+    }
+
     function setEditMode(product) {
       if (!product) return;
 
@@ -99,9 +110,10 @@
       if (els.price) els.price.value = product.price_ghs ?? "";
       if (els.avail) els.avail.value = String(!!product.is_available);
       if (els.status) els.status.value = String(product.status || "draft");
-      if (els.imageUrls) els.imageUrls.value = Array.isArray(product.image_urls) ? product.image_urls.join(", ") : "";
+      if (els.imageUrls) {
+        els.imageUrls.value = Array.isArray(product.image_urls) ? product.image_urls.join(", ") : "";
+      }
 
-      // campus_id may exist even though we joined campus object
       if (els.campusSelect) {
         const campusId = product.campus_id || "";
         els.campusSelect.value = campusId || "";
@@ -120,10 +132,13 @@
     }
 
     async function renderList() {
-      safeText(els.listMsg, "Loading…");
+      safeText(els.listMsg, showTrash ? "Loading trash…" : "Loading…");
       if (els.tbody) els.tbody.innerHTML = "";
 
-      const res = await productService.listMyProducts();
+      const res = showTrash
+        ? await productService.listMyDeletedProducts()
+        : await productService.listMyProducts();
+
       if (!res.ok) {
         safeText(els.listMsg, res?.error?.message || "Failed to load products.");
         return;
@@ -133,11 +148,19 @@
       cachedProducts = rows;
 
       if (!rows.length) {
-        safeText(els.listMsg, "No products yet. Create your first product above.");
+        safeText(
+          els.listMsg,
+          showTrash
+            ? "Trash is empty."
+            : "No products yet. Create your first product above."
+        );
         return;
       }
 
-      safeText(els.listMsg, `Loaded ${rows.length} product(s).`);
+      safeText(
+        els.listMsg,
+        showTrash ? `Trash: ${rows.length} item(s).` : `Loaded ${rows.length} product(s).`
+      );
 
       rows.forEach((p) => {
         const tr = document.createElement("tr");
@@ -146,13 +169,12 @@
         const avail = !!p.is_available;
         const campusLabel = campusLabelFromProduct(p);
 
-        tr.innerHTML = `
-          <td>${escapeHtml(p.title || "—")}</td>
-          <td>${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</td>
-          <td><span class="pill">${escapeHtml(status)}</span></td>
-          <td>${avail ? "✅" : "—"}</td>
-          <td>${escapeHtml(campusLabel)}</td>
-          <td>
+        const actionsHtml = showTrash
+          ? `
+            <button class="secondary" data-action="restore" data-id="${p.id}">Restore</button>
+            <button class="danger" data-action="purge" data-id="${p.id}">Delete permanently</button>
+          `
+          : `
             <button class="secondary" data-action="edit" data-id="${p.id}">Edit</button>
             <button class="secondary" data-action="toggle" data-id="${p.id}" data-avail="${avail}">
               ${avail ? "Disable" : "Enable"}
@@ -161,7 +183,20 @@
               ${status === "published" ? "Unpublish" : "Publish"}
             </button>
             <button class="danger" data-action="del" data-id="${p.id}">Delete</button>
+          `;
+
+        // Optional: show deleted time in trash by adding a subtle tooltip in title column
+        const deletedHint = showTrash && p.deleted_at ? ` (deleted: ${formatDateShort(p.deleted_at)})` : "";
+
+        tr.innerHTML = `
+          <td title="${escapeHtml(showTrash && p.deleted_at ? `Deleted: ${formatDateShort(p.deleted_at)}` : "")}">
+            ${escapeHtml(p.title || "—")}${escapeHtml(deletedHint)}
           </td>
+          <td>${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</td>
+          <td><span class="pill">${escapeHtml(status)}</span></td>
+          <td>${avail ? "✅" : "—"}</td>
+          <td>${escapeHtml(campusLabel)}</td>
+          <td>${actionsHtml}</td>
         `;
 
         els.tbody.appendChild(tr);
@@ -170,6 +205,13 @@
 
     async function onCreateOrUpdate(e) {
       e.preventDefault();
+
+      // Block edits while in trash view (UX safety)
+      if (showTrash) {
+        safeText(els.formMsg, "Switch back from Trash to create/edit products.");
+        return;
+      }
+
       if (els.createBtn) els.createBtn.disabled = true;
       safeText(els.formMsg, "Saving…");
 
@@ -247,7 +289,38 @@
       const id = btn.dataset.id;
       if (!action || !id) return;
 
+      // -------- TRASH actions ----------
+      if (action === "restore") {
+        const res = await productService.restoreProduct(id);
+        if (!res.ok) alert(res?.error?.message || "Restore failed.");
+        clearEditMode();
+        await renderList();
+        return;
+      }
+
+      if (action === "purge") {
+        // triple safety: only in trash mode
+        if (!showTrash) return;
+
+        const first = confirm("Delete permanently? This cannot be undone.");
+        if (!first) return;
+
+        const second = prompt('Type DELETE to permanently remove this item:');
+        if (String(second || "").trim().toUpperCase() !== "DELETE") {
+          alert("Cancelled.");
+          return;
+        }
+
+        const res = await productService.deleteProductPermanently(id, true);
+        if (!res.ok) alert(res?.error?.message || "Permanent delete failed.");
+        clearEditMode();
+        await renderList();
+        return;
+      }
+
+      // -------- NORMAL actions ----------
       if (action === "edit") {
+        if (showTrash) return; // no edit in trash
         const p = cachedProducts.find((x) => x.id === id);
         if (!p) return;
         setEditMode(p);
@@ -255,7 +328,9 @@
       }
 
       if (action === "del") {
+        if (showTrash) return;
         if (!confirm("Delete this product? (soft delete)")) return;
+
         const res = await productService.deleteProduct(id);
         if (!res.ok) alert(res?.error?.message || "Delete failed.");
         clearEditMode();
@@ -264,6 +339,7 @@
       }
 
       if (action === "toggle") {
+        if (showTrash) return;
         const current = btn.dataset.avail === "true";
         const res = await productService.toggleAvailability(id, !current);
         if (!res.ok) alert(res?.error?.message || "Update failed.");
@@ -272,18 +348,26 @@
       }
 
       if (action === "pub") {
+        if (showTrash) return;
         const status = btn.dataset.status;
-        const res = status === "published"
-          ? await productService.unpublish(id)
-          : await productService.publish(id);
+        const res =
+          status === "published"
+            ? await productService.unpublish(id)
+            : await productService.publish(id);
 
         if (!res.ok) alert(res?.error?.message || "Update failed.");
         await renderList();
       }
     }
 
+    function setTrashButtonUi() {
+      if (!els.trashBtn) return;
+      els.trashBtn.textContent = showTrash ? "Back" : "Trash";
+    }
+
     function start() {
       grabEls();
+      setTrashButtonUi();
 
       guardSession()
         .then((ok) => {
@@ -293,7 +377,23 @@
         .catch((e) => logger.error(e));
 
       if (els.form) els.form.addEventListener("submit", onCreateOrUpdate);
-      if (els.refreshBtn) els.refreshBtn.addEventListener("click", () => { clearEditMode(); renderList(); });
+
+      if (els.refreshBtn) {
+        els.refreshBtn.addEventListener("click", () => {
+          clearEditMode();
+          renderList();
+        });
+      }
+
+      if (els.trashBtn) {
+        els.trashBtn.addEventListener("click", async () => {
+          showTrash = !showTrash;
+          setTrashButtonUi();
+          clearEditMode();
+          await renderList();
+        });
+      }
+
       if (els.tbody) els.tbody.addEventListener("click", onTableClick);
 
       if (els.logoutBtn) {
