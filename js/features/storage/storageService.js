@@ -15,88 +15,102 @@
       return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
     }
 
-    function buildObjectPath({ sellerId, productId, fileName }) {
-      const pid = productId || "new";
-      return ["seller", sellerId, "product", pid, `${randomId()}-${safeName(fileName)}`].join("/");
+    async function getAuthUid() {
+      const { data, error } = await supabaseClient.auth.getUser();
+      if (error) return { ok: false, error };
+      const uid = data?.user?.id || null;
+      if (!uid) return { ok: false, error: { message: "Not logged in." } };
+      return { ok: true, uid };
     }
 
-    function isAlreadyExistsError(err) {
-      const msg = String(err?.message || err?.error || "").toLowerCase();
-      // Supabase storage messages vary; cover common ones
-      return msg.includes("already exists") || msg.includes("duplicate") || msg.includes("exists");
-    }
-
-    async function uploadOne({ sellerId, productId, file }) {
-      const objectPath = buildObjectPath({
-        sellerId,
-        productId,
-        fileName: file?.name || "image",
-      });
-
-      const { error: upErr } = await supabaseClient.storage
-        .from(BUCKET)
-        .upload(objectPath, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file?.type || "image/*",
-        });
-
-      if (!upErr) {
-        const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(objectPath);
-        return { ok: true, url: data?.publicUrl || null };
-      }
-
-      // Retry once if we hit a "file exists" edge case
-      if (isAlreadyExistsError(upErr)) {
-        const retryPath = buildObjectPath({
-          sellerId,
-          productId,
-          fileName: file?.name || "image",
-        });
-
-        const { error: retryErr } = await supabaseClient.storage
-          .from(BUCKET)
-          .upload(retryPath, file, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: file?.type || "image/*",
-          });
-
-        if (retryErr) return { ok: false, error: retryErr };
-
-        const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(retryPath);
-        return { ok: true, url: data?.publicUrl || null };
-      }
-
-      return { ok: false, error: upErr };
-    }
-
-    async function uploadImages({ sellerId, productId, files }) {
+    /**
+     * STRICT path convention (enforced by Storage policy):
+     * seller/<AUTH_UID>/product/<productId-or-new>/<random>-<filename>
+     *
+     * Returns:
+     * { ok: true, paths: [...], urls: [...] }
+     */
+    async function uploadImages({ productId, files }) {
       try {
+        const u = await getAuthUid();
+        if (!u.ok) return { ok: false, error: u.error };
+
+        const uid = u.uid;
+
         const list = Array.from(files || []).filter(Boolean);
+        if (!list.length) return { ok: true, paths: [], urls: [] };
 
-        if (!list.length) return { ok: true, urls: [] };
-
-        if (!sellerId) {
-          return { ok: false, error: { message: "Missing sellerId for image upload." } };
-        }
-
+        const paths = [];
         const urls = [];
 
         for (const file of list) {
-          const one = await uploadOne({ sellerId, productId, file });
-          if (!one.ok) return { ok: false, error: one.error };
-          if (one.url) urls.push(one.url);
+          const ext =
+            (file.name && file.name.includes(".") && file.name.split(".").pop()) || "jpg";
+
+          const objectPath = [
+            "seller",
+            uid,
+            "product",
+            productId || "new",
+            `${randomId()}-${safeName(file.name || "image")}`,
+          ].join("/");
+
+          const { error: upErr } = await supabaseClient.storage
+            .from(BUCKET)
+            .upload(objectPath, file, {
+              cacheControl: "3600",
+              upsert: false,
+              contentType: file.type || `image/${ext}`,
+            });
+
+          if (upErr) return { ok: false, error: upErr };
+
+          paths.push(objectPath);
+
+          // If bucket is PUBLIC, this gives a usable URL immediately.
+          // If bucket becomes PRIVATE later, we'll generate signed URLs from paths instead.
+          const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(objectPath);
+          if (data?.publicUrl) urls.push(data.publicUrl);
         }
 
-        return { ok: true, urls };
+        return { ok: true, paths, urls };
       } catch (e) {
         logger?.error?.("[ShopUp] storageService.uploadImages error", e);
         return { ok: false, error: { message: "Image upload failed." } };
       }
     }
 
-    return { uploadImages };
+    /**
+     * For PRIVATE bucket later:
+     * Pass stored paths and get signed URLs (expiresIn seconds).
+     */
+    async function createSignedUrls({ paths, expiresIn }) {
+      try {
+        const list = Array.from(paths || []).filter(Boolean);
+        if (!list.length) return { ok: true, urls: [] };
+
+        const urls = [];
+
+        for (const p of list) {
+          const { data, error } = await supabaseClient.storage
+            .from(BUCKET)
+            .createSignedUrl(p, expiresIn || 3600);
+
+          if (error) return { ok: false, error };
+          if (data?.signedUrl) urls.push(data.signedUrl);
+        }
+
+        return { ok: true, urls };
+      } catch (e) {
+        logger?.error?.("[ShopUp] storageService.createSignedUrls error", e);
+        return { ok: false, error: { message: "Could not create signed URLs." } };
+      }
+    }
+
+    return {
+      uploadImages,
+      createSignedUrls, // used later when bucket is private
+    };
   }
 
   window.ShopUpStorageService = { create };
