@@ -24,11 +24,12 @@
     }
 
     /**
-     * STRICT path convention (enforced by Storage policy):
+     * STRICT path convention (matches Storage policy):
      * seller/<AUTH_UID>/product/<productId-or-new>/<random>-<filename>
      *
-     * Returns:
-     * { ok: true, paths: [...], urls: [...] }
+     * Returns: { ok: true, paths: [...], urls: [...] }
+     * - urls are PUBLIC URLs only if bucket is public (optional)
+     * - for PRIVATE bucket, urls will be [] and we use signed URLs from paths
      */
     async function uploadImages({ productId, files }) {
       try {
@@ -36,7 +37,6 @@
         if (!u.ok) return { ok: false, error: u.error };
 
         const uid = u.uid;
-
         const list = Array.from(files || []).filter(Boolean);
         if (!list.length) return { ok: true, paths: [], urls: [] };
 
@@ -67,8 +67,7 @@
 
           paths.push(objectPath);
 
-          // If bucket is PUBLIC, this gives a usable URL immediately.
-          // If bucket becomes PRIVATE later, we'll generate signed URLs from paths instead.
+          // Optional public URL (works only if bucket is public)
           const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(objectPath);
           if (data?.publicUrl) urls.push(data.publicUrl);
         }
@@ -81,21 +80,36 @@
     }
 
     /**
-     * For PRIVATE bucket later:
-     * Pass stored paths and get signed URLs (expiresIn seconds).
+     * PRIVATE bucket: generate signed URLs from stored paths.
+     * Uses Supabase bulk method if available.
      */
     async function createSignedUrls({ paths, expiresIn }) {
       try {
         const list = Array.from(paths || []).filter(Boolean);
         if (!list.length) return { ok: true, urls: [] };
 
-        const urls = [];
+        const ttl = Number(expiresIn || 3600);
 
-        for (const p of list) {
+        // Bulk API (recommended)
+        if (typeof supabaseClient.storage.from(BUCKET).createSignedUrls === "function") {
           const { data, error } = await supabaseClient.storage
             .from(BUCKET)
-            .createSignedUrl(p, expiresIn || 3600);
+            .createSignedUrls(list, ttl);
 
+          if (error) return { ok: false, error };
+
+          // data: [{ path, signedUrl }, ...]
+          const urls = (data || [])
+            .map((x) => x?.signedUrl)
+            .filter(Boolean);
+
+          return { ok: true, urls };
+        }
+
+        // Fallback: sign one-by-one
+        const urls = [];
+        for (const p of list) {
+          const { data, error } = await supabaseClient.storage.from(BUCKET).createSignedUrl(p, ttl);
           if (error) return { ok: false, error };
           if (data?.signedUrl) urls.push(data.signedUrl);
         }
@@ -107,10 +121,7 @@
       }
     }
 
-    return {
-      uploadImages,
-      createSignedUrls, // used later when bucket is private
-    };
+    return { uploadImages, createSignedUrls };
   }
 
   window.ShopUpStorageService = { create };
