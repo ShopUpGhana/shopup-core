@@ -1,299 +1,101 @@
-// /js/features/products/productService.js
+// /js/features/storage/storageService.js
 (function () {
   "use strict";
 
-  function create({ supabaseClient, logger, schemaName }) {
-    const SCHEMA = schemaName || "shopup_core";
+  function create({ supabaseClient, logger, bucketName, signedUrlExpiresIn }) {
+    const BUCKET = bucketName || "product-images";
+    const EXPIRES = Number(signedUrlExpiresIn || 3600);
+
+    function safeName(name) {
+      return String(name || "image")
+        .trim()
+        .replace(/[^a-zA-Z0-9._-]/g, "_");
+    }
+
+    function randomId() {
+      return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    }
 
     async function getAuthUid() {
       const { data, error } = await supabaseClient.auth.getUser();
       if (error) return { ok: false, error };
-      const uid = data?.user?.id || null;
-      if (!uid) return { ok: false, error: { message: "Not logged in." } };
+      const uid = data?.user?.id;
+      if (!uid) return { ok: false, error: { message: "Not authenticated." } };
       return { ok: true, uid };
     }
 
-    // ✅ ENTERPRISE-SAFE:
-    // Tries sellers.user_id == auth.uid() first (recommended)
-    // If your sellers table uses sellers.id == auth.uid(), it falls back automatically.
-    async function getMySellerRow() {
+    function buildPath({ uid, productId, fileName }) {
+      // STRICT folder policy expects:
+      // seller/<auth.uid()>/product/<productId or new>/<filename>
+      return [
+        "seller",
+        uid,
+        "product",
+        productId || "new",
+        `${randomId()}-${safeName(fileName || "image")}`,
+      ].join("/");
+    }
+
+    async function uploadImages({ productId, files }) {
       try {
-        const u = await getAuthUid();
-        if (!u.ok) return u;
+        const list = Array.from(files || []).filter(Boolean);
+        if (!list.length) return { ok: true, paths: [], urls: [] };
 
-        const uid = u.uid;
+        const me = await getAuthUid();
+        if (!me.ok) return me;
 
-        // 1) Preferred: sellers.user_id
-        {
-          const { data, error } = await supabaseClient
-            .schema(SCHEMA)
-            .from("sellers")
-            .select("id, user_id, name, email")
-            .eq("user_id", uid)
-            .maybeSingle();
+        const uid = me.uid;
+        const paths = [];
 
-          // If this fails because user_id column doesn't exist, PostgREST returns 400.
-          // We'll fall back to sellers.id below.
-          if (!error && data) return { ok: true, seller: data };
+        for (const file of list) {
+          const objectPath = buildPath({ uid, productId, fileName: file.name });
+
+          const { error: upErr } = await supabaseClient.storage
+            .from(BUCKET)
+            .upload(objectPath, file, {
+              cacheControl: "3600",
+              upsert: false,
+              contentType: file.type || "image/jpeg",
+            });
+
+          if (upErr) return { ok: false, error: upErr };
+
+          paths.push(objectPath);
         }
 
-        // 2) Fallback: sellers.id == auth.uid()
-        {
-          const { data, error } = await supabaseClient
-            .schema(SCHEMA)
-            .from("sellers")
-            .select("id, user_id, name, email")
-            .eq("id", uid)
-            .maybeSingle();
+        // If bucket is private, generate signed URLs for immediate UI usage
+        const urlsRes = await createSignedUrls(paths, EXPIRES);
+        if (!urlsRes.ok) return urlsRes;
 
-          if (error) return { ok: false, error };
-          if (!data) return { ok: false, error: { message: "Seller profile not found." } };
-
-          return { ok: true, seller: data };
-        }
+        return { ok: true, paths, urls: urlsRes.urls };
       } catch (e) {
-        logger?.error?.("[ShopUp] getMySellerRow error", e);
-        return { ok: false, error: { message: "Could not identify seller." } };
+        logger?.error?.("[ShopUp] storageService.uploadImages error", e);
+        return { ok: false, error: { message: "Image upload failed." } };
       }
     }
 
-    async function listCampuses() {
-      const { data, error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("campuses")
-        .select("id, name, city")
-        .order("name", { ascending: true });
+    async function createSignedUrls(paths, expiresIn) {
+      try {
+        const list = Array.from(paths || []).filter(Boolean);
+        if (!list.length) return { ok: true, urls: [] };
 
-      if (error) return { ok: false, error };
-      return { ok: true, data: data || [] };
+        // supabase-js supports createSignedUrl per path; loop is simplest + reliable
+        const urls = [];
+        for (const p of list) {
+          const { data, error } = await supabaseClient.storage.from(BUCKET).createSignedUrl(p, expiresIn);
+          if (error) return { ok: false, error };
+          if (data?.signedUrl) urls.push(data.signedUrl);
+        }
+
+        return { ok: true, urls };
+      } catch (e) {
+        logger?.error?.("[ShopUp] storageService.createSignedUrls error", e);
+        return { ok: false, error: { message: "Could not create signed URLs." } };
+      }
     }
 
-    async function listMyProducts() {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
-      const { data, error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .select(
-          `
-          id,
-          title,
-          description,
-          category,
-          price_ghs,
-          currency,
-          status,
-          is_available,
-          campus_id,
-          image_urls,
-          image_paths,
-          created_at,
-          updated_at,
-          campus:campuses!left(name, city)
-        `
-        )
-        .eq("seller_id", seller.id)
-        .eq("is_deleted", false)
-        .order("created_at", { ascending: false });
-
-      if (error) return { ok: false, error };
-      return { ok: true, data: data || [], seller };
-    }
-
-    async function listMyDeletedProducts() {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
-      const { data, error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .select(
-          `
-          id,
-          title,
-          description,
-          category,
-          price_ghs,
-          currency,
-          status,
-          is_available,
-          campus_id,
-          image_urls,
-          image_paths,
-          deleted_at,
-          created_at,
-          updated_at,
-          campus:campuses!left(name, city)
-        `
-        )
-        .eq("seller_id", seller.id)
-        .eq("is_deleted", true)
-        .order("deleted_at", { ascending: false });
-
-      if (error) return { ok: false, error };
-      return { ok: true, data: data || [], seller };
-    }
-
-    async function createProduct(payload) {
-      const me = await getMySellerRow();
-      if (!me.ok) return me;
-
-      const { seller } = me;
-
-      const insert = {
-        seller_id: seller.id,
-        campus_id: payload.campus_id || null,
-        title: payload.title,
-        description: payload.description || null,
-        category: payload.category || null,
-        price_ghs: payload.price_ghs,
-        currency: payload.currency || "GHS",
-        status: payload.status || "draft",
-        is_available: !!payload.is_available,
-        image_urls: Array.isArray(payload.image_urls) ? payload.image_urls : [],
-        image_paths: Array.isArray(payload.image_paths) ? payload.image_paths : [],
-        updated_at: new Date().toISOString(),
-      };
-
-      const { data, error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .insert(insert)
-        .select("id")
-        .single();
-
-      if (error) return { ok: false, error };
-      return { ok: true, data };
-    }
-
-    async function updateProduct(productId, payload) {
-      const patch = {
-        campus_id: payload.campus_id || null,
-        title: payload.title,
-        description: payload.description || null,
-        category: payload.category || null,
-        price_ghs: payload.price_ghs,
-        currency: payload.currency || "GHS",
-        status: payload.status || "draft",
-        is_available: !!payload.is_available,
-        image_urls: Array.isArray(payload.image_urls) ? payload.image_urls : [],
-        image_paths: Array.isArray(payload.image_paths) ? payload.image_paths : [],
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .update(patch)
-        .eq("id", productId)
-        .eq("is_deleted", false);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
-    async function deleteProduct(productId) {
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .update({
-          is_deleted: true,
-          deleted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", productId)
-        .eq("is_deleted", false);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
-    async function restoreProduct(productId) {
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .update({
-          is_deleted: false,
-          deleted_at: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", productId)
-        .eq("is_deleted", true);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
-    async function deleteProductPermanently(productId, confirmFlag) {
-      if (!confirmFlag) return { ok: false, error: { message: "Confirmation required." } };
-
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .delete()
-        .eq("id", productId)
-        .eq("is_deleted", true);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
-    async function toggleAvailability(productId, nextValue) {
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .update({ is_available: !!nextValue, updated_at: new Date().toISOString() })
-        .eq("id", productId)
-        .eq("is_deleted", false);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
-    async function publish(productId) {
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .update({ status: "published", updated_at: new Date().toISOString() })
-        .eq("id", productId)
-        .eq("is_deleted", false);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
-    async function unpublish(productId) {
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .update({ status: "draft", updated_at: new Date().toISOString() })
-        .eq("id", productId)
-        .eq("is_deleted", false);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
-    return {
-      listCampuses,
-      listMyProducts,
-      listMyDeletedProducts,
-      createProduct,
-      updateProduct,
-      deleteProduct,
-      restoreProduct,
-      deleteProductPermanently,
-      toggleAvailability,
-      publish,
-      unpublish,
-      getMySellerRow,
-    };
+    return { uploadImages, createSignedUrls };
   }
 
-  window.ShopUpProductService = { create };
+  window.ShopUpStorageService = { create };
 })();
