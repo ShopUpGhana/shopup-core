@@ -2,8 +2,9 @@
 (function () {
   "use strict";
 
-  function create({ supabaseClient, logger, bucketName }) {
+  function create({ supabaseClient, logger, bucketName, signedUrlExpiresIn }) {
     const BUCKET = bucketName || "product-images";
+    const EXPIRES = Number(signedUrlExpiresIn || 3600);
 
     function safeName(name) {
       return String(name || "image")
@@ -18,98 +19,70 @@
     async function getAuthUid() {
       const { data, error } = await supabaseClient.auth.getUser();
       if (error) return { ok: false, error };
-      const uid = data?.user?.id || null;
-      if (!uid) return { ok: false, error: { message: "Not logged in." } };
+      const uid = data?.user?.id;
+      if (!uid) return { ok: false, error: { message: "Not authenticated." } };
       return { ok: true, uid };
     }
 
-    /**
-     * STRICT path convention (matches Storage policy):
-     * seller/<AUTH_UID>/product/<productId-or-new>/<random>-<filename>
-     *
-     * Returns: { ok: true, paths: [...], urls: [...] }
-     * - urls are PUBLIC URLs only if bucket is public (optional)
-     * - for PRIVATE bucket, urls will be [] and we use signed URLs from paths
-     */
+    function buildPath({ uid, productId, fileName }) {
+      // STRICT folder policy expects:
+      // seller/<auth.uid()>/product/<productId or new>/<filename>
+      return [
+        "seller",
+        uid,
+        "product",
+        productId || "new",
+        `${randomId()}-${safeName(fileName || "image")}`,
+      ].join("/");
+    }
+
     async function uploadImages({ productId, files }) {
       try {
-        const u = await getAuthUid();
-        if (!u.ok) return { ok: false, error: u.error };
-
-        const uid = u.uid;
         const list = Array.from(files || []).filter(Boolean);
         if (!list.length) return { ok: true, paths: [], urls: [] };
 
+        const me = await getAuthUid();
+        if (!me.ok) return me;
+
+        const uid = me.uid;
         const paths = [];
-        const urls = [];
 
         for (const file of list) {
-          const ext =
-            (file.name && file.name.includes(".") && file.name.split(".").pop()) || "jpg";
-
-          const objectPath = [
-            "seller",
-            uid,
-            "product",
-            productId || "new",
-            `${randomId()}-${safeName(file.name || "image")}`,
-          ].join("/");
+          const objectPath = buildPath({ uid, productId, fileName: file.name });
 
           const { error: upErr } = await supabaseClient.storage
             .from(BUCKET)
             .upload(objectPath, file, {
               cacheControl: "3600",
               upsert: false,
-              contentType: file.type || `image/${ext}`,
+              contentType: file.type || "image/jpeg",
             });
 
           if (upErr) return { ok: false, error: upErr };
 
           paths.push(objectPath);
-
-          // Optional public URL (works only if bucket is public)
-          const { data } = supabaseClient.storage.from(BUCKET).getPublicUrl(objectPath);
-          if (data?.publicUrl) urls.push(data.publicUrl);
         }
 
-        return { ok: true, paths, urls };
+        // If bucket is private, generate signed URLs for immediate UI usage
+        const urlsRes = await createSignedUrls(paths, EXPIRES);
+        if (!urlsRes.ok) return urlsRes;
+
+        return { ok: true, paths, urls: urlsRes.urls };
       } catch (e) {
         logger?.error?.("[ShopUp] storageService.uploadImages error", e);
         return { ok: false, error: { message: "Image upload failed." } };
       }
     }
 
-    /**
-     * PRIVATE bucket: generate signed URLs from stored paths.
-     * Uses Supabase bulk method if available.
-     */
-    async function createSignedUrls({ paths, expiresIn }) {
+    async function createSignedUrls(paths, expiresIn) {
       try {
         const list = Array.from(paths || []).filter(Boolean);
         if (!list.length) return { ok: true, urls: [] };
 
-        const ttl = Number(expiresIn || 3600);
-
-        // Bulk API (recommended)
-        if (typeof supabaseClient.storage.from(BUCKET).createSignedUrls === "function") {
-          const { data, error } = await supabaseClient.storage
-            .from(BUCKET)
-            .createSignedUrls(list, ttl);
-
-          if (error) return { ok: false, error };
-
-          // data: [{ path, signedUrl }, ...]
-          const urls = (data || [])
-            .map((x) => x?.signedUrl)
-            .filter(Boolean);
-
-          return { ok: true, urls };
-        }
-
-        // Fallback: sign one-by-one
+        // supabase-js supports createSignedUrl per path; loop is simplest + reliable
         const urls = [];
         for (const p of list) {
-          const { data, error } = await supabaseClient.storage.from(BUCKET).createSignedUrl(p, ttl);
+          const { data, error } = await supabaseClient.storage.from(BUCKET).createSignedUrl(p, expiresIn);
           if (error) return { ok: false, error };
           if (data?.signedUrl) urls.push(data.signedUrl);
         }
