@@ -35,7 +35,7 @@
       els.avail = document.querySelector("#is_available");
       els.status = document.querySelector("#status");
       els.imageUrls = document.querySelector("#image_urls");
-      els.images = document.querySelector("#images"); // ✅ NEW
+      els.images = document.querySelector("#images"); // ✅ file input
     }
 
     function safeText(el, text) {
@@ -90,7 +90,9 @@
 
     function campusLabelFromProduct(p) {
       return p.campus
-        ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
+        ? p.campus.city
+          ? `${p.campus.name} — ${p.campus.city}`
+          : p.campus.name
         : "All campuses";
     }
 
@@ -102,7 +104,7 @@
     }
 
     function setEditMode(product) {
-      if (!product) return;
+      if (!product || showTrash) return;
 
       if (els.productId) els.productId.value = product.id;
       if (els.title) els.title.value = product.title || "";
@@ -111,16 +113,16 @@
       if (els.price) els.price.value = product.price_ghs ?? "";
       if (els.avail) els.avail.value = String(!!product.is_available);
       if (els.status) els.status.value = String(product.status || "draft");
+
       if (els.imageUrls) {
         els.imageUrls.value = Array.isArray(product.image_urls) ? product.image_urls.join(", ") : "";
       }
 
       if (els.campusSelect) {
-        const campusId = product.campus_id || "";
-        els.campusSelect.value = campusId || "";
+        els.campusSelect.value = product.campus_id || "";
       }
 
-      if (els.images) els.images.value = ""; // don't auto-carry file inputs
+      if (els.images) els.images.value = "";
 
       if (els.createBtn) els.createBtn.textContent = "Save changes";
       safeText(els.formMsg, `Editing: ${product.title || "product"}`);
@@ -152,21 +154,14 @@
       cachedProducts = rows;
 
       if (!rows.length) {
-        safeText(
-          els.listMsg,
-          showTrash ? "Trash is empty." : "No products yet. Create your first product above."
-        );
+        safeText(els.listMsg, showTrash ? "Trash is empty." : "No products yet. Create your first product above.");
         return;
       }
 
-      safeText(
-        els.listMsg,
-        showTrash ? `Trash: ${rows.length} item(s).` : `Loaded ${rows.length} product(s).`
-      );
+      safeText(els.listMsg, showTrash ? `Trash: ${rows.length} item(s).` : `Loaded ${rows.length} product(s).`);
 
       rows.forEach((p) => {
         const tr = document.createElement("tr");
-
         const status = String(p.status || "draft");
         const avail = !!p.is_available;
         const campusLabel = campusLabelFromProduct(p);
@@ -229,32 +224,31 @@
 
         if (!title) {
           safeText(els.formMsg, "Title is required.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
         if (!isFinite(price_ghs) || price_ghs < 0) {
           safeText(els.formMsg, "Price must be a valid number.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
+        // Start with whatever user typed
         const image_urls =
           image_urls_raw.length
             ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
             : [];
 
-        // ✅ Upload selected images and append URLs
+        // ✅ Upload selected images (optional) and append URLs
+        const me = await productService.getMySellerRow();
+        if (!me.ok) {
+          safeText(els.formMsg, me?.error?.message || "Could not identify seller.");
+          if (els.createBtn) els.createBtn.disabled = false;
+          return;
+        }
+
         const files = els.images?.files;
         if (files && files.length) {
-          if (!storageService || !storageService.uploadImages) {
-            safeText(els.formMsg, "Storage service not available. Check script order.");
-            return;
-          }
-
-          const me = await productService.getMySellerRow();
-          if (!me.ok) {
-            safeText(els.formMsg, me?.error?.message || "Could not identify seller.");
-            return;
-          }
-
           const up = await storageService.uploadImages({
             sellerId: me.seller?.id,
             productId: product_id || null,
@@ -263,10 +257,13 @@
 
           if (!up.ok) {
             safeText(els.formMsg, up?.error?.message || "Image upload failed.");
+            if (els.createBtn) els.createBtn.disabled = false;
             return;
           }
 
           image_urls.push(...(up.urls || []));
+          // Reflect combined URLs back into the input (nice UX)
+          if (els.imageUrls) els.imageUrls.value = image_urls.join(", ");
         }
 
         const payload = {
@@ -282,17 +279,19 @@
         };
 
         let res;
-        if (product_id) res = await productService.updateProduct(product_id, payload);
-        else res = await productService.createProduct(payload);
+        if (product_id) {
+          res = await productService.updateProduct(product_id, payload);
+        } else {
+          res = await productService.createProduct(payload);
+        }
 
         if (!res.ok) {
           safeText(els.formMsg, res?.error?.message || "Save failed.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
-        if (els.images) els.images.value = ""; // ✅ clear file input
         safeText(els.formMsg, product_id ? "✅ Changes saved." : "✅ Product created.");
-
         clearEditMode();
         await renderList();
       } catch (err) {
@@ -311,6 +310,7 @@
       const id = btn.dataset.id;
       if (!action || !id) return;
 
+      // Trash actions
       if (action === "restore") {
         const res = await productService.restoreProduct(id);
         if (!res.ok) alert(res?.error?.message || "Restore failed.");
@@ -331,13 +331,14 @@
           return;
         }
 
-        const res = await productService.deleteProductPermanently(id, true);
+        const res = await productService.deleteProductPermanently(id);
         if (!res.ok) alert(res?.error?.message || "Permanent delete failed.");
         clearEditMode();
         await renderList();
         return;
       }
 
+      // Normal actions
       if (action === "edit") {
         if (showTrash) return;
         const p = cachedProducts.find((x) => x.id === id);
@@ -369,10 +370,9 @@
       if (action === "pub") {
         if (showTrash) return;
         const status = btn.dataset.status;
-        const res =
-          status === "published"
-            ? await productService.unpublish(id)
-            : await productService.publish(id);
+        const res = status === "published"
+          ? await productService.unpublish(id)
+          : await productService.publish(id);
 
         if (!res.ok) alert(res?.error?.message || "Update failed.");
         await renderList();
