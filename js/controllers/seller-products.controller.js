@@ -26,9 +26,6 @@
       els.tbody = document.querySelector("#productsTbody");
       els.campusSelect = document.querySelector("#campus_id");
 
-      // NEW: file input
-      els.images = document.querySelector("#images");
-
       // fields
       els.productId = document.querySelector("#product_id");
       els.title = document.querySelector("#title");
@@ -38,42 +35,11 @@
       els.avail = document.querySelector("#is_available");
       els.status = document.querySelector("#status");
       els.imageUrls = document.querySelector("#image_urls");
+      els.images = document.querySelector("#images"); // file input
     }
 
     function safeText(el, text) {
       if (el) el.textContent = text;
-    }
-
-    async function guardSession() {
-      const res = await authService.session();
-      const session = res?.data?.session;
-      if (!session || !session.user) {
-        window.location.href = loginUrl();
-        return false;
-      }
-      return true;
-    }
-
-    async function loadCampuses() {
-      if (!els.campusSelect) return;
-
-      els.campusSelect.innerHTML = `<option value="">Loading campuses...</option>`;
-
-      const res = await productService.listCampuses();
-      if (!res.ok) {
-        els.campusSelect.innerHTML = `<option value="">Failed to load campuses</option>`;
-        return;
-      }
-
-      const campuses = res.data || [];
-      const options = [
-        `<option value="">All campuses (optional)</option>`,
-        ...campuses.map((c) => {
-          const label = c.city ? `${c.name} — ${c.city}` : c.name;
-          return `<option value="${c.id}">${label}</option>`;
-        }),
-      ];
-      els.campusSelect.innerHTML = options.join("");
     }
 
     function money(v) {
@@ -96,6 +62,39 @@
         : "All campuses";
     }
 
+    async function guardSession() {
+      const res = await authService.session();
+      const session = res?.data?.session;
+      if (!session || !session.user) {
+        window.location.href = loginUrl();
+        return false;
+      }
+      return true;
+    }
+
+    async function loadCampuses() {
+      if (!els.campusSelect) return;
+
+      els.campusSelect.innerHTML = `<option value="">Loading campuses...</option>`;
+      const res = await productService.listCampuses();
+
+      if (!res.ok) {
+        els.campusSelect.innerHTML = `<option value="">Failed to load campuses</option>`;
+        return;
+      }
+
+      const campuses = res.data || [];
+      const options = [
+        `<option value="">All campuses (optional)</option>`,
+        ...campuses.map((c) => {
+          const label = c.city ? `${c.name} — ${c.city}` : c.name;
+          return `<option value="${c.id}">${label}</option>`;
+        }),
+      ];
+
+      els.campusSelect.innerHTML = options.join("");
+    }
+
     function setEditMode(product) {
       if (!product) return;
 
@@ -106,10 +105,11 @@
       if (els.price) els.price.value = product.price_ghs ?? "";
       if (els.avail) els.avail.value = String(!!product.is_available);
       if (els.status) els.status.value = String(product.status || "draft");
+
+      // keep legacy urls input populated
       if (els.imageUrls) {
         els.imageUrls.value = Array.isArray(product.image_urls) ? product.image_urls.join(", ") : "";
       }
-      if (els.images) els.images.value = "";
 
       if (els.campusSelect) {
         const campusId = product.campus_id || "";
@@ -129,6 +129,21 @@
       safeText(els.formMsg, "");
     }
 
+    async function buildThumbHtmlFromProduct(p) {
+      // Prefer cover_image_path; fallback to first image_paths
+      const cover = p.cover_image_path || (Array.isArray(p.image_paths) && p.image_paths.length ? p.image_paths[0] : null);
+      if (!cover || !storageService?.createSignedThumbUrl) return "";
+
+      const t = await storageService.createSignedThumbUrl(
+        cover,
+        { width: 68, height: 68, resize: "cover", quality: 80 },
+        60 * 10
+      );
+
+      if (!t.ok || !t.url) return "";
+      return `<div class="thumbs"><img src="${escapeHtml(t.url)}" alt="img" /></div>`;
+    }
+
     async function renderList() {
       safeText(els.listMsg, showTrash ? "Loading trash…" : "Loading…");
       if (els.tbody) els.tbody.innerHTML = "";
@@ -146,17 +161,16 @@
       cachedProducts = rows;
 
       if (!rows.length) {
-        safeText(
-          els.listMsg,
-          showTrash ? "Trash is empty." : "No products yet. Create your first product above."
-        );
+        safeText(els.listMsg, showTrash ? "Trash is empty." : "No products yet. Create your first product above.");
         return;
       }
 
       safeText(els.listMsg, showTrash ? `Trash: ${rows.length} item(s).` : `Loaded ${rows.length} product(s).`);
 
-      rows.forEach((p) => {
+      // Render sequentially (simple + stable)
+      for (const p of rows) {
         const tr = document.createElement("tr");
+
         const status = String(p.status || "draft");
         const avail = !!p.is_available;
         const campusLabel = campusLabelFromProduct(p);
@@ -177,17 +191,20 @@
             <button class="danger" data-action="del" data-id="${p.id}">Delete</button>
           `;
 
+        const thumbsHtml = await buildThumbHtmlFromProduct(p);
+
         tr.innerHTML = `
           <td>${escapeHtml(p.title || "—")}</td>
           <td>${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</td>
           <td><span class="pill">${escapeHtml(status)}</span></td>
           <td>${avail ? "✅" : "—"}</td>
           <td>${escapeHtml(campusLabel)}</td>
+          <td>${thumbsHtml || "—"}</td>
           <td>${actionsHtml}</td>
         `;
 
         els.tbody.appendChild(tr);
-      });
+      }
     }
 
     async function onCreateOrUpdate(e) {
@@ -217,34 +234,52 @@
 
         if (!title) {
           safeText(els.formMsg, "Title is required.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
         if (!isFinite(price_ghs) || price_ghs < 0) {
           safeText(els.formMsg, "Price must be a valid number.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
-        // existing manual URLs
+        // legacy URL input support
         const image_urls =
           image_urls_raw.length
             ? image_urls_raw.split(",").map((s) => s.trim()).filter(Boolean)
             : [];
 
-        // ✅ Upload selected images and append URLs
-        const files = els.images?.files;
-        if (storageService && files && files.length) {
+        // enterprise paths (private storage)
+        let image_paths = [];
+
+        // Upload selected images (STRICT) -> store paths
+        const sessionRes = await authService.session();
+        const user = sessionRes?.data?.session?.user;
+
+        if (els.images?.files && els.images.files.length) {
+          if (!user?.id) {
+            safeText(els.formMsg, "Not logged in (auth.uid missing).");
+            if (els.createBtn) els.createBtn.disabled = false;
+            return;
+          }
+
           const up = await storageService.uploadImages({
-            productId: product_id || null,
-            files,
+            ownerId: user.id,                 // STRICT = auth.uid()
+            productId: product_id || "new",    // ok for MVP
+            files: els.images.files,
           });
 
           if (!up.ok) {
             safeText(els.formMsg, up?.error?.message || "Image upload failed.");
+            if (els.createBtn) els.createBtn.disabled = false;
             return;
           }
 
-          image_urls.push(...(up.urls || []));
+          image_paths = up.paths || [];
         }
+
+        // cover image = first path if available
+        const cover_image_path = image_paths.length ? image_paths[0] : null;
 
         const payload = {
           title,
@@ -255,19 +290,28 @@
           currency: "GHS",
           status,
           is_available,
+
+          // legacy urls retained (optional)
           image_urls,
+
+          // enterprise
+          image_paths,
+          cover_image_path,
         };
 
-        const res = product_id
-          ? await productService.updateProduct(product_id, payload)
-          : await productService.createProduct(payload);
+        let res;
+        if (product_id) {
+          res = await productService.updateProduct(product_id, payload);
+        } else {
+          res = await productService.createProduct(payload);
+        }
 
         if (!res.ok) {
           safeText(els.formMsg, res?.error?.message || "Save failed.");
+          if (els.createBtn) els.createBtn.disabled = false;
           return;
         }
 
-        if (els.images) els.images.value = "";
         safeText(els.formMsg, product_id ? "✅ Changes saved." : "✅ Product created.");
         clearEditMode();
         await renderList();
