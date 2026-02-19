@@ -12,8 +12,9 @@
     "campusFeedController",
     (cc) =>
       window.ShopUpCampusFeedController.create({
+        productService: cc.resolve("productService"),
+        storageService: cc.resolve("storageService"),
         supabaseClient: cc.resolve("supabaseClient"),
-        publicProductService: cc.resolve("publicProductService"),
         logger: cc.resolve("logger"),
       }),
     { singleton: true }
