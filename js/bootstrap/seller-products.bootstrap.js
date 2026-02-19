@@ -8,10 +8,6 @@
     return;
   }
 
-  if (!window.ShopUpSellerProductsController || !window.ShopUpSellerProductsController.create) {
-    throw new Error("[ShopUp] SellerProductsController not loaded. Check script order/path.");
-  }
-
   c.register(
     "sellerProductsController",
     (cc) =>
