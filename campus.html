@@ -4,29 +4,62 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>ShopUp • Campus Marketplace</title>
+    <title>ShopUp • Campus Feed</title>
 
     <style>
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; padding:24px; background:#0b1220; color:#e8eefc; }
       .wrap { max-width: 1100px; margin: 0 auto; }
       .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-      .card { background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:18px; margin-top:14px; }
-      h1 { margin:0; font-size:22px; }
+      .card { background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:18px; margin-top:14px; }
+      h1 { margin:0; font-size:20px; }
       .muted { opacity:.8; }
-      select, input {
-        padding:10px 12px; border-radius:10px;
+      label { display:block; font-size:12px; margin:12px 0 6px; opacity:.9; }
+      input, select {
+        width:100%; padding:10px 12px; border-radius:10px;
         border:1px solid rgba(255,255,255,.12); background:#0b1220; color:#e8eefc;
       }
-      .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:12px; }
+      .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+      .btn {
+        padding:10px 12px; border-radius:10px; border:0; background:#2d6cff;
+        color:white; font-weight:600; cursor:pointer;
+      }
+      .btn.secondary { background:transparent; border:1px solid rgba(255,255,255,.16); }
+      .msg { margin-top:10px; font-size:13px; }
+      .grid {
+        display:grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap:12px;
+        margin-top:12px;
+      }
       @media (max-width: 980px){ .grid { grid-template-columns: repeat(2, 1fr); } }
-      @media (max-width: 560px){ .grid { grid-template-columns: 1fr; } }
-      .p { background:#0f1830; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:14px; }
-      .img { width:100%; height:160px; border-radius:12px; border:1px solid rgba(255,255,255,.12); object-fit:cover; background:#0b1220; }
-      .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-      .price { font-weight:700; }
+      @media (max-width: 520px){ .grid { grid-template-columns: 1fr; } }
+      .pCard {
+        background:#0f172a;
+        border:1px solid rgba(255,255,255,.08);
+        border-radius:14px;
+        overflow:hidden;
+        display:flex;
+        flex-direction:column;
+      }
+      .pImg {
+        width:100%;
+        height:170px;
+        background: rgba(255,255,255,.05);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .pImg img {
+        width:100%;
+        height:100%;
+        object-fit:cover;
+        display:block;
+      }
+      .pBody { padding:12px; display:flex; flex-direction:column; gap:8px; }
+      .pTitle { font-weight:700; font-size:14px; line-height:1.2; }
+      .pMeta { display:flex; justify-content:space-between; gap:10px; font-size:12px; opacity:.9; }
       .pill { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); font-size:12px; opacity:.95; }
-      button { padding:10px 12px; border-radius:10px; border:0; background:#2d6cff; color:white; font-weight:600; cursor:pointer; }
-      button.secondary { background:transparent; border:1px solid rgba(255,255,255,.16); }
+      a { color:#8ab4ff; text-decoration:none; }
     </style>
   </head>
 
@@ -34,35 +67,59 @@
     <div class="wrap">
       <div class="top">
         <div>
-          <h1>Campus Marketplace</h1>
-          <div class="muted">Browse published products. Images are served via signed URLs (private bucket).</div>
+          <h1>Campus Feed</h1>
+          <div class="muted">Browse products by campus. Images are served via short-lived signed thumbnails (private bucket).</div>
         </div>
         <div class="row">
-          <select id="campusFilter">
-            <option value="">All campuses</option>
-          </select>
-          <button id="refreshBtn" class="secondary" type="button">Refresh</button>
+          <a href="seller/login.html"><button class="btn secondary" type="button">Seller Login</button></a>
+          <button id="refreshBtn" class="btn secondary" type="button">Refresh</button>
         </div>
       </div>
 
       <div class="card">
-        <div id="msg" class="muted">Loading…</div>
-        <div id="grid" class="grid"></div>
+        <div class="row">
+          <div style="flex:1; min-width:220px;">
+            <label for="campus_id">Campus</label>
+            <select id="campus_id">
+              <option value="">Loading campuses…</option>
+            </select>
+          </div>
+
+          <div style="flex:2; min-width:260px;">
+            <label for="q">Search</label>
+            <input id="q" placeholder="Search title/category…" />
+          </div>
+
+          <div style="min-width:160px;">
+            <label>&nbsp;</label>
+            <button id="applyBtn" class="btn" type="button">Apply</button>
+          </div>
+        </div>
+
+        <div id="feedMsg" class="msg muted">Loading…</div>
+        <div id="feedGrid" class="grid"></div>
       </div>
     </div>
 
-    <!-- Supabase SDK -->
+    <!-- 1) Supabase SDK -->
     <script src="js/vendor/supabase.js"></script>
+
+    <!-- 2) Config -->
     <script src="js/supabase-config.js"></script>
 
-    <!-- Core DI -->
+    <!-- 3) Core DI -->
     <script src="js/core/container.js"></script>
+    <script src="js/core/result.js"></script>
 
-    <!-- Services -->
-    <script src="js/features/products/publicProductService.js"></script>
+    <!-- 4) Services -->
+    <script src="js/features/auth/authService.js"></script>
+    <script src="js/features/products/productService.js"></script>
+    <script src="js/features/storage/storageService.js"></script>
 
-    <!-- Bootstraps -->
-    <script src="js/bootstrap/public.bootstrap.js"></script>
+    <!-- 5) App bootstrap -->
+    <script src="js/bootstrap/app.bootstrap.js"></script>
+
+    <!-- 6) Controller + bootstrap -->
     <script src="js/controllers/campus-feed.controller.js"></script>
     <script src="js/bootstrap/campus-feed.bootstrap.js"></script>
   </body>
