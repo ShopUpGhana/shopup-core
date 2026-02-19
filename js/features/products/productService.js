@@ -28,8 +28,7 @@
 
       if (!error && data?.id) return { ok: true, seller: data };
 
-      // Fallback: some setups don’t have user_id wired (or RLS blocks it)
-      // Try email match (MVP fallback)
+      // Fallback: email match
       const email = me.user.email;
       if (!email) return { ok: false, error: error || { message: "Seller not found." } };
 
@@ -134,7 +133,6 @@
 
       const { seller } = me;
 
-      // Ensure cover_image_path is set if image_paths exist
       const image_paths = Array.isArray(payload.image_paths) ? payload.image_paths : [];
       const cover_image_path =
         payload.cover_image_path || (image_paths.length ? image_paths[0] : null);
@@ -197,8 +195,25 @@
       return { ok: true };
     }
 
+    async function setCoverImage(productId, coverPath) {
+      const cover_image_path = String(coverPath || "").trim() || null;
+      if (!cover_image_path) return { ok: false, error: { message: "Invalid cover path." } };
+
+      const { error } = await supabaseClient
+        .schema(SCHEMA)
+        .from("products")
+        .update({
+          cover_image_path,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", productId)
+        .eq("is_deleted", false);
+
+      if (error) return { ok: false, error };
+      return { ok: true };
+    }
+
     async function deleteProduct(productId) {
-      // Soft delete
       const { error } = await supabaseClient
         .schema(SCHEMA)
         .from("products")
@@ -231,7 +246,6 @@
     }
 
     async function deleteProductPermanently(productId, onlyIfDeleted) {
-      // Hard delete (optional safety)
       let q = supabaseClient.schema(SCHEMA).from("products").delete().eq("id", productId);
       if (onlyIfDeleted) q = q.eq("is_deleted", true);
 
@@ -276,18 +290,59 @@
       return { ok: true };
     }
 
+    // ✅ PUBLIC FEED (published + available + not deleted)
+    async function listPublicFeed({ campusId, q, limit }) {
+      const LIM = Number(limit || 60);
+
+      let query = supabaseClient
+        .schema(SCHEMA)
+        .from("products")
+        .select(`
+          id,
+          campus_id,
+          title,
+          category,
+          price_ghs,
+          currency,
+          cover_image_path,
+          image_paths,
+          campus:campuses!left(name, city),
+          created_at
+        `)
+        .eq("status", "published")
+        .eq("is_available", true)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false })
+        .limit(isFinite(LIM) ? LIM : 60);
+
+      if (q) {
+        query = query.or(`title.ilike.%${q}%,category.ilike.%${q}%`);
+      }
+
+      if (campusId) {
+        // include global products too (campus_id is null)
+        query = query.or(`campus_id.eq.${campusId},campus_id.is.null`);
+      }
+
+      const { data, error } = await query;
+      if (error) return { ok: false, error };
+      return { ok: true, data: data || [] };
+    }
+
     return {
       listCampuses,
       listMyProducts,
       listMyDeletedProducts,
       createProduct,
       updateProduct,
+      setCoverImage,
       deleteProduct,
       restoreProduct,
       deleteProductPermanently,
       toggleAvailability,
       publish,
       unpublish,
+      listPublicFeed,
       getMySellerRow,
       getSessionUser,
     };
