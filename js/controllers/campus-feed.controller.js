@@ -2,23 +2,22 @@
 (function () {
   "use strict";
 
-  function create({ supabaseClient, publicProductService, logger }) {
+  function create({ productService, storageService, supabaseClient, logger }) {
     const els = {};
+    let campuses = [];
+    let products = [];
 
     function grabEls() {
-      els.grid = document.querySelector("#grid");
-      els.msg = document.querySelector("#msg");
-      els.campusFilter = document.querySelector("#campusFilter");
       els.refreshBtn = document.querySelector("#refreshBtn");
+      els.applyBtn = document.querySelector("#applyBtn");
+      els.campusSelect = document.querySelector("#campus_id");
+      els.q = document.querySelector("#q");
+      els.feedMsg = document.querySelector("#feedMsg");
+      els.feedGrid = document.querySelector("#feedGrid");
     }
 
     function safeText(el, text) {
       if (el) el.textContent = text;
-    }
-
-    function money(v) {
-      const n = Number(v || 0);
-      return isFinite(n) ? n.toFixed(2) : "0.00";
     }
 
     function escapeHtml(str) {
@@ -30,11 +29,30 @@
         .replaceAll("'", "&#039;");
     }
 
-    async function loadCampuses() {
-      const res = await publicProductService.listCampuses();
-      if (!res.ok) return;
+    function money(v) {
+      const n = Number(v || 0);
+      return isFinite(n) ? n.toFixed(2) : "0.00";
+    }
 
-      const campuses = res.data || [];
+    function pickCoverPath(p) {
+      if (p.cover_image_path) return p.cover_image_path;
+      if (Array.isArray(p.image_paths) && p.image_paths.length) return p.image_paths[0];
+      return null;
+    }
+
+    async function loadCampuses() {
+      if (!els.campusSelect) return;
+
+      els.campusSelect.innerHTML = `<option value="">Loading campuses…</option>`;
+      const res = await productService.listCampuses();
+
+      if (!res.ok) {
+        els.campusSelect.innerHTML = `<option value="">Failed to load campuses</option>`;
+        return;
+      }
+
+      campuses = res.data || [];
+
       const options = [
         `<option value="">All campuses</option>`,
         ...campuses.map((c) => {
@@ -43,95 +61,118 @@
         }),
       ];
 
-      if (els.campusFilter) els.campusFilter.innerHTML = options.join("");
+      els.campusSelect.innerHTML = options.join("");
     }
 
-    async function signPaths(paths) {
-      // Calls Edge Function: get-product-image-urls
-      const { data, error } = await supabaseClient.functions.invoke("get-product-image-urls", {
-        body: { paths, expiresIn: 3600 },
-      });
+    async function fetchFeed() {
+      const campusId = String(els.campusSelect?.value || "").trim() || null;
+      const q = String(els.q?.value || "").trim() || null;
 
-      if (error) return { ok: false, error };
-      if (!data?.ok) return { ok: false, error: { message: data?.error || "Sign failed" } };
+      safeText(els.feedMsg, "Loading feed…");
+      if (els.feedGrid) els.feedGrid.innerHTML = "";
 
-      return { ok: true, urls: data.urls || [] };
-    }
-
-    async function render() {
-      safeText(els.msg, "Loading products…");
-      if (els.grid) els.grid.innerHTML = "";
-
-      const campusId = els.campusFilter?.value || "";
-
-      const res = await publicProductService.listPublishedProducts({ campusId });
+      const res = await productService.listPublicFeed({ campusId, q, limit: 80 });
       if (!res.ok) {
-        safeText(els.msg, res?.error?.message || "Failed to load products.");
+        safeText(els.feedMsg, res?.error?.message || "Failed to load feed.");
         return;
       }
 
-      const products = res.data || [];
+      products = res.data || [];
       if (!products.length) {
-        safeText(els.msg, "No products found.");
+        safeText(els.feedMsg, "No products found.");
         return;
       }
 
-      // Build list of FIRST image path per product (cover)
-      const coverPaths = products
-        .map((p) => Array.isArray(p.image_paths) ? p.image_paths[0] : null)
-        .filter(Boolean);
+      safeText(els.feedMsg, `Showing ${products.length} product(s).`);
 
-      // Sign them in one request (function limits to 60)
-      const signed = coverPaths.length ? await signPaths(coverPaths) : { ok: true, urls: [] };
-      if (!signed.ok) {
-        // Still render without images
-        logger?.warn?.("[ShopUp] signed urls failed", signed.error);
-      }
+      // Build one batch request for thumbnail signing
+      const uniquePaths = [];
+      const pathSet = new Set();
 
-      // Map path->url
-      const pathToUrl = new Map();
-      if (signed.ok) {
-        for (let i = 0; i < coverPaths.length; i++) {
-          pathToUrl.set(coverPaths[i], signed.urls[i]);
+      for (const p of products) {
+        const path = pickCoverPath(p);
+        if (path && !pathSet.has(path)) {
+          pathSet.add(path);
+          uniquePaths.push(path);
         }
       }
 
-      safeText(els.msg, `Showing ${products.length} product(s).`);
+      // Call Edge Function to get signed thumbnail URLs (public-safe)
+      // (If you haven’t deployed the function yet, you’ll just see placeholders)
+      let signedMap = {};
+      if (uniquePaths.length) {
+        try {
+          const fn = await supabaseClient.functions.invoke("sign-product-images", {
+            body: {
+              paths: uniquePaths,
+              expiresIn: 60 * 10,
+              transform: { width: 600, height: 400, resize: "cover", quality: 80 },
+            },
+          });
+
+          if (fn?.data?.ok) signedMap = fn.data.map || {};
+        } catch (e) {
+          logger?.error?.("[ShopUp] sign thumbnails error", e);
+        }
+      }
+
+      renderGrid(signedMap);
+    }
+
+    function renderGrid(signedMap) {
+      if (!els.feedGrid) return;
+      els.feedGrid.innerHTML = "";
 
       for (const p of products) {
+        const coverPath = pickCoverPath(p);
+        const imgUrl = coverPath ? signedMap[coverPath] : null;
+
         const campusLabel = p.campus
           ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
           : "All campuses";
 
-        const coverPath = Array.isArray(p.image_paths) ? p.image_paths[0] : null;
-        const coverUrl = coverPath ? pathToUrl.get(coverPath) : null;
-
         const div = document.createElement("div");
-        div.className = "p";
+        div.className = "pCard";
+
         div.innerHTML = `
-          <img class="img" src="${coverUrl ? escapeHtml(coverUrl) : ""}" alt="product" loading="lazy" />
-          <div style="margin-top:10px; display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
-            <div style="min-width:0;">
-              <div style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                ${escapeHtml(p.title || "—")}
-              </div>
-              <div class="muted" style="font-size:12px; margin-top:4px;">
-                ${escapeHtml(campusLabel)}
-              </div>
+          <div class="pImg">
+            ${
+              imgUrl
+                ? `<img src="${escapeHtml(imgUrl)}" alt="product" />`
+                : `<div class="muted" style="font-size:12px;">No image</div>`
+            }
+          </div>
+          <div class="pBody">
+            <div class="pTitle">${escapeHtml(p.title || "—")}</div>
+            <div class="pMeta">
+              <div><span class="pill">${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</span></div>
+              <div class="muted">${escapeHtml(campusLabel)}</div>
             </div>
-            <div class="pill">${escapeHtml(p.currency || "GHS")} ${escapeHtml(money(p.price_ghs))}</div>
+            <div class="muted" style="font-size:12px;">
+              ${escapeHtml(p.category || "General")}
+            </div>
           </div>
         `;
-        els.grid.appendChild(div);
+
+        els.feedGrid.appendChild(div);
       }
     }
 
     function start() {
       grabEls();
-      loadCampuses().then(render);
 
-      if (els.refreshBtn) els.refreshBtn.addEventListener("click", render);
-      if (els.campusFilter) els.campusFilter.addEventListener("change", render);
+      loadCampuses()
+        .then(fetchFeed)
+        .catch((e) => logger?.error?.(e));
+
+      if (els.refreshBtn) els.refreshBtn.addEventListener("click", fetchFeed);
+      if (els.applyBtn) els.applyBtn.addEventListener("click", fetchFeed);
+
+      if (els.q) {
+        els.q.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") fetchFeed();
+        });
+      }
     }
 
     return { start };
