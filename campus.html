@@ -1,4 +1,3 @@
-<!-- /campus.html -->
 <!doctype html>
 <html lang="en">
   <head>
@@ -9,57 +8,24 @@
     <style>
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; padding:24px; background:#0b1220; color:#e8eefc; }
       .wrap { max-width: 1100px; margin: 0 auto; }
-      .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-      .card { background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:18px; margin-top:14px; }
-      h1 { margin:0; font-size:20px; }
-      .muted { opacity:.8; }
-      label { display:block; font-size:12px; margin:12px 0 6px; opacity:.9; }
+      .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+      .card { background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:14px; }
+      .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
       input, select {
-        width:100%; padding:10px 12px; border-radius:10px;
-        border:1px solid rgba(255,255,255,.12); background:#0b1220; color:#e8eefc;
+        padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.12);
+        background:#0b1220; color:#e8eefc;
       }
-      .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-      .btn {
-        padding:10px 12px; border-radius:10px; border:0; background:#2d6cff;
-        color:white; font-weight:600; cursor:pointer;
-      }
-      .btn.secondary { background:transparent; border:1px solid rgba(255,255,255,.16); }
-      .msg { margin-top:10px; font-size:13px; }
-      .grid {
-        display:grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap:12px;
-        margin-top:12px;
-      }
-      @media (max-width: 980px){ .grid { grid-template-columns: repeat(2, 1fr); } }
-      @media (max-width: 520px){ .grid { grid-template-columns: 1fr; } }
-      .pCard {
-        background:#0f172a;
-        border:1px solid rgba(255,255,255,.08);
-        border-radius:14px;
-        overflow:hidden;
-        display:flex;
-        flex-direction:column;
-      }
-      .pImg {
-        width:100%;
-        height:170px;
-        background: rgba(255,255,255,.05);
-        display:flex;
-        align-items:center;
-        justify-content:center;
-      }
-      .pImg img {
-        width:100%;
-        height:100%;
-        object-fit:cover;
-        display:block;
-      }
-      .pBody { padding:12px; display:flex; flex-direction:column; gap:8px; }
-      .pTitle { font-weight:700; font-size:14px; line-height:1.2; }
-      .pMeta { display:flex; justify-content:space-between; gap:10px; font-size:12px; opacity:.9; }
+      button { padding:10px 12px; border-radius:10px; border:0; background:#2d6cff; color:white; font-weight:600; cursor:pointer; }
+      .muted { opacity:.8; font-size:13px; }
+      .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:12px; }
+      @media (max-width: 980px){ .grid { grid-template-columns: repeat(2, 1fr);} }
+      @media (max-width: 560px){ .grid { grid-template-columns: 1fr;} }
+      .p { background:#0b1220; border:1px solid rgba(255,255,255,.10); border-radius:14px; overflow:hidden; }
+      .img { width:100%; aspect-ratio: 1 / 1; background: rgba(255,255,255,.06); display:block; object-fit:cover; }
+      .pad { padding:10px 12px; }
+      .title { font-weight:700; margin:0 0 4px; }
+      .meta { display:flex; justify-content:space-between; gap:10px; }
       .pill { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); font-size:12px; opacity:.95; }
-      a { color:#8ab4ff; text-decoration:none; }
     </style>
   </head>
 
@@ -67,60 +33,154 @@
     <div class="wrap">
       <div class="top">
         <div>
-          <h1>Campus Feed</h1>
-          <div class="muted">Browse products by campus. Images are served via short-lived signed thumbnails (private bucket).</div>
+          <h2 style="margin:0;">Campus Feed</h2>
+          <div class="muted">Published + available items. Campus-specific + global products.</div>
         </div>
+
         <div class="row">
-          <a href="seller/login.html"><button class="btn secondary" type="button">Seller Login</button></a>
-          <button id="refreshBtn" class="btn secondary" type="button">Refresh</button>
+          <select id="campusSelect">
+            <option value="">All campuses</option>
+          </select>
+
+          <input id="q" placeholder="Search (title/category)..." />
+          <button id="goBtn" type="button">Search</button>
         </div>
       </div>
 
-      <div class="card">
-        <div class="row">
-          <div style="flex:1; min-width:220px;">
-            <label for="campus_id">Campus</label>
-            <select id="campus_id">
-              <option value="">Loading campuses…</option>
-            </select>
-          </div>
-
-          <div style="flex:2; min-width:260px;">
-            <label for="q">Search</label>
-            <input id="q" placeholder="Search title/category…" />
-          </div>
-
-          <div style="min-width:160px;">
-            <label>&nbsp;</label>
-            <button id="applyBtn" class="btn" type="button">Apply</button>
-          </div>
-        </div>
-
-        <div id="feedMsg" class="msg muted">Loading…</div>
-        <div id="feedGrid" class="grid"></div>
-      </div>
+      <div id="msg" class="muted"></div>
+      <div id="grid" class="grid"></div>
     </div>
 
-    <!-- 1) Supabase SDK -->
+    <!-- Supabase SDK + config -->
     <script src="js/vendor/supabase.js"></script>
-
-    <!-- 2) Config -->
     <script src="js/supabase-config.js"></script>
 
-    <!-- 3) Core DI -->
+    <!-- Core DI -->
     <script src="js/core/container.js"></script>
     <script src="js/core/result.js"></script>
 
-    <!-- 4) Services -->
+    <!-- Services -->
     <script src="js/features/auth/authService.js"></script>
     <script src="js/features/products/productService.js"></script>
     <script src="js/features/storage/storageService.js"></script>
+    <script src="js/features/images/signedUrlService.js"></script>
 
-    <!-- 5) App bootstrap -->
+    <!-- App bootstrap -->
     <script src="js/bootstrap/app.bootstrap.js"></script>
 
-    <!-- 6) Controller + bootstrap -->
-    <script src="js/controllers/campus-feed.controller.js"></script>
-    <script src="js/bootstrap/campus-feed.bootstrap.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        const c = window.ShopUpContainer;
+        const productService = c.resolve("productService");
+        const signedUrlService = c.resolve("signedUrlService");
+
+        const els = {
+          campusSelect: document.querySelector("#campusSelect"),
+          q: document.querySelector("#q"),
+          goBtn: document.querySelector("#goBtn"),
+          msg: document.querySelector("#msg"),
+          grid: document.querySelector("#grid"),
+        };
+
+        function safeText(el, t){ if (el) el.textContent = t; }
+        function escapeHtml(str){
+          return String(str ?? "")
+            .replaceAll("&","&amp;")
+            .replaceAll("<","&lt;")
+            .replaceAll(">","&gt;")
+            .replaceAll('"',"&quot;")
+            .replaceAll("'","&#039;");
+        }
+
+        async function loadCampuses() {
+          const res = await productService.listCampuses();
+          if (!res.ok) return;
+
+          const opts = [
+            `<option value="">All campuses</option>`,
+            ...(res.data || []).map((x) => {
+              const label = x.city ? `${x.name} — ${x.city}` : x.name;
+              return `<option value="${x.id}">${escapeHtml(label)}</option>`;
+            }),
+          ];
+          els.campusSelect.innerHTML = opts.join("");
+        }
+
+        function renderCards(rows, urlMap) {
+          els.grid.innerHTML = "";
+
+          rows.forEach((p) => {
+            const coverPath = p.cover_image_path || (Array.isArray(p.image_paths) ? p.image_paths[0] : null);
+            const imgUrl = coverPath ? (urlMap[coverPath] || "") : "";
+
+            const campusLabel = p.campus
+              ? (p.campus.city ? `${p.campus.name} — ${p.campus.city}` : p.campus.name)
+              : "All campuses";
+
+            const price = Number(p.price_ghs || 0).toFixed(2);
+
+            const div = document.createElement("div");
+            div.className = "p";
+            div.innerHTML = `
+              ${imgUrl ? `<img class="img" src="${escapeHtml(imgUrl)}" alt="product" />` : `<div class="img"></div>`}
+              <div class="pad">
+                <div class="title">${escapeHtml(p.title || "—")}</div>
+                <div class="meta muted">
+                  <span>${escapeHtml(p.currency || "GHS")} ${escapeHtml(price)}</span>
+                  <span class="pill">${escapeHtml(p.category || "General")}</span>
+                </div>
+                <div class="muted" style="margin-top:6px;">${escapeHtml(campusLabel)}</div>
+              </div>
+            `;
+            els.grid.appendChild(div);
+          });
+        }
+
+        async function run() {
+          safeText(els.msg, "Loading feed...");
+          els.grid.innerHTML = "";
+
+          const campusId = els.campusSelect.value || "";
+          const q = (els.q.value || "").trim();
+
+          const feed = await productService.listPublicFeed({ campusId, q, limit: 80 });
+          if (!feed.ok) {
+            safeText(els.msg, feed?.error?.message || "Feed load failed.");
+            return;
+          }
+
+          const rows = feed.data || [];
+          if (!rows.length) {
+            safeText(els.msg, "No items found.");
+            return;
+          }
+
+          // Collect cover paths for signing
+          const paths = [];
+          rows.forEach((p) => {
+            const cover = p.cover_image_path || (Array.isArray(p.image_paths) ? p.image_paths[0] : null);
+            if (cover) paths.push(cover);
+          });
+
+          // Sign to render thumbnails (private bucket safe)
+          const signed = await signedUrlService.signPaths({
+            paths,
+            expiresIn: 600,
+            transform: { width: 600, height: 600, resize: "cover", quality: 80 },
+          });
+
+          const map = signed.ok ? (signed.map || {}) : {};
+          renderCards(rows, map);
+
+          safeText(els.msg, `Showing ${rows.length} items.`);
+        }
+
+        loadCampuses().then(run);
+
+        els.goBtn.addEventListener("click", run);
+      })();
+    </script>
   </body>
 </html>
