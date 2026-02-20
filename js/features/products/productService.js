@@ -18,7 +18,6 @@
 
       const userId = me.user.id;
 
-      // Preferred: sellers.user_id = auth.users.id
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("sellers")
@@ -28,7 +27,7 @@
 
       if (!error && data?.id) return { ok: true, seller: data };
 
-      // Fallback: email match
+      // Fallback (email match)
       const email = me.user.email;
       if (!email) return { ok: false, error: error || { message: "Seller not found." } };
 
@@ -195,24 +194,6 @@
       return { ok: true };
     }
 
-    async function setCoverImage(productId, coverPath) {
-      const cover_image_path = String(coverPath || "").trim() || null;
-      if (!cover_image_path) return { ok: false, error: { message: "Invalid cover path." } };
-
-      const { error } = await supabaseClient
-        .schema(SCHEMA)
-        .from("products")
-        .update({
-          cover_image_path,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", productId)
-        .eq("is_deleted", false);
-
-      if (error) return { ok: false, error };
-      return { ok: true };
-    }
-
     async function deleteProduct(productId) {
       const { error } = await supabaseClient
         .schema(SCHEMA)
@@ -290,7 +271,9 @@
       return { ok: true };
     }
 
-    // ✅ PUBLIC FEED (published + available + not deleted)
+    // -----------------------------
+    // PUBLIC FEED (campus + global)
+    // -----------------------------
     async function listPublicFeed({ campusId, q, limit }) {
       const LIM = Number(limit || 60);
 
@@ -316,11 +299,12 @@
         .limit(isFinite(LIM) ? LIM : 60);
 
       if (q) {
-        query = query.or(`title.ilike.%${q}%,category.ilike.%${q}%`);
+        const safe = String(q).replace(/,/g, ""); // avoid OR injection with commas
+        query = query.or(`title.ilike.%${safe}%,category.ilike.%${safe}%`);
       }
 
       if (campusId) {
-        // include global products too (campus_id is null)
+        // show campus-specific + global products
         query = query.or(`campus_id.eq.${campusId},campus_id.is.null`);
       }
 
@@ -335,16 +319,15 @@
       listMyDeletedProducts,
       createProduct,
       updateProduct,
-      setCoverImage,
       deleteProduct,
       restoreProduct,
       deleteProductPermanently,
       toggleAvailability,
       publish,
       unpublish,
-      listPublicFeed,
       getMySellerRow,
       getSessionUser,
+      listPublicFeed,
     };
   }
 
