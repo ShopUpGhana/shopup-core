@@ -102,3 +102,18 @@ Copy code
 ---
 
 This is ShopUp’s long-term platform foundation — not a demo project.
+
+---
+
+## 🔐 Pages That Use Auth
+
+**2 pages require authentication** (redirect to login if no active session):
+
+| Page | Auth mechanism |
+|------|---------------|
+| `seller/dashboard.html` | Calls `supabaseClient.auth.getUser()` directly; redirects to login if no user |
+| `seller/products.html` | Calls `authService.session()` via `guardSession()` in the controller; redirects to login if no session |
+
+Additionally, `seller/login.html` checks for an existing session on load and redirects already-logged-in users straight to the dashboard.
+
+Public pages (`index.html`, `campus.html`, `seller/register.html`) do not require authentication.

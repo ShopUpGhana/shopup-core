@@ -29,11 +29,21 @@
   }));
 
   /* -----------------------------
+     Auth Adapter
+  ----------------------------- */
+  c.register("authAdapter", (cc) =>
+    window.ShopUpSupabaseAuthAdapter.create({
+      supabase: cc.resolve("supabaseClient"),
+      logger: cc.resolve("logger"),
+    })
+  );
+
+  /* -----------------------------
      Auth Service
   ----------------------------- */
   c.register("authService", (cc) =>
     window.ShopUpAuthService.create({
-      supabaseClient: cc.resolve("supabaseClient"),
+      authAdapter: cc.resolve("authAdapter"),
       logger: cc.resolve("logger"),
     })
   );
