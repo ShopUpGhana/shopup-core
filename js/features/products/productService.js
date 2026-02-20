@@ -6,10 +6,15 @@
 
   function create({ supabaseClient, authService, logger }) {
     async function getSessionUser() {
-      const res = await authService.session();
-      const user = res?.data?.session?.user;
-      if (!user) return { ok: false, error: { message: "Not logged in." } };
-      return { ok: true, user };
+      try {
+        const res = await authService.session();
+        const user = res?.data?.session?.user;
+        if (!user) return { ok: false, error: { message: "Not logged in." } };
+        return { ok: true, user };
+      } catch (e) {
+        logger?.error?.("[ShopUp] productService.getSessionUser error", e);
+        return { ok: false, error: { message: "Session check failed." } };
+      }
     }
 
     async function getMySellerRow() {
@@ -18,6 +23,7 @@
 
       const userId = me.user.id;
 
+      // Preferred: sellers.user_id = auth.users.id
       const { data, error } = await supabaseClient
         .schema(SCHEMA)
         .from("sellers")
@@ -27,7 +33,7 @@
 
       if (!error && data?.id) return { ok: true, seller: data };
 
-      // Fallback (email match)
+      // Fallback: email match (MVP)
       const email = me.user.email;
       if (!email) return { ok: false, error: error || { message: "Seller not found." } };
 
@@ -126,15 +132,23 @@
       return { ok: true, data: data || [], seller };
     }
 
+    function normalizeImages(payload) {
+      const image_paths = Array.isArray(payload.image_paths) ? payload.image_paths.filter(Boolean) : [];
+      const image_urls = Array.isArray(payload.image_urls) ? payload.image_urls.filter(Boolean) : [];
+
+      const cover_image_path =
+        payload.cover_image_path ||
+        (image_paths.length ? image_paths[0] : null);
+
+      return { image_paths, image_urls, cover_image_path };
+    }
+
     async function createProduct(payload) {
       const me = await getMySellerRow();
       if (!me.ok) return me;
 
       const { seller } = me;
-
-      const image_paths = Array.isArray(payload.image_paths) ? payload.image_paths : [];
-      const cover_image_path =
-        payload.cover_image_path || (image_paths.length ? image_paths[0] : null);
+      const imgs = normalizeImages(payload);
 
       const insertRow = {
         seller_id: seller.id,
@@ -146,9 +160,9 @@
         currency: payload.currency || "GHS",
         status: payload.status || "draft",
         is_available: !!payload.is_available,
-        image_urls: payload.image_urls || [],
-        image_paths,
-        cover_image_path,
+        image_urls: imgs.image_urls,
+        image_paths: imgs.image_paths,
+        cover_image_path: imgs.cover_image_path,
         updated_at: new Date().toISOString(),
       };
 
@@ -164,9 +178,7 @@
     }
 
     async function updateProduct(productId, payload) {
-      const image_paths = Array.isArray(payload.image_paths) ? payload.image_paths : [];
-      const cover_image_path =
-        payload.cover_image_path || (image_paths.length ? image_paths[0] : null);
+      const imgs = normalizeImages(payload);
 
       const updateRow = {
         campus_id: payload.campus_id || null,
@@ -177,9 +189,9 @@
         currency: payload.currency || "GHS",
         status: payload.status || "draft",
         is_available: !!payload.is_available,
-        image_urls: payload.image_urls || [],
-        image_paths,
-        cover_image_path,
+        image_urls: imgs.image_urls,
+        image_paths: imgs.image_paths,
+        cover_image_path: imgs.cover_image_path,
         updated_at: new Date().toISOString(),
       };
 
@@ -271,9 +283,7 @@
       return { ok: true };
     }
 
-    // -----------------------------
-    // PUBLIC FEED (campus + global)
-    // -----------------------------
+    // ✅ PUBLIC FEED (wins): published + available + campus-specific + global (campus_id is null)
     async function listPublicFeed({ campusId, q, limit }) {
       const LIM = Number(limit || 60);
 
@@ -298,13 +308,14 @@
         .order("created_at", { ascending: false })
         .limit(isFinite(LIM) ? LIM : 60);
 
-      if (q) {
-        const safe = String(q).replace(/,/g, ""); // avoid OR injection with commas
+      const term = (q || "").trim();
+      if (term) {
+        const safe = term.replaceAll(",", ""); // cheap guard for the OR string
         query = query.or(`title.ilike.%${safe}%,category.ilike.%${safe}%`);
       }
 
       if (campusId) {
-        // show campus-specific + global products
+        // include global products too
         query = query.or(`campus_id.eq.${campusId},campus_id.is.null`);
       }
 
@@ -314,6 +325,7 @@
     }
 
     return {
+      // seller
       listCampuses,
       listMyProducts,
       listMyDeletedProducts,
@@ -325,8 +337,12 @@
       toggleAvailability,
       publish,
       unpublish,
+
+      // identity
       getMySellerRow,
       getSessionUser,
+
+      // public
       listPublicFeed,
     };
   }
