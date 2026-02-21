@@ -2,11 +2,13 @@
   "use strict";
 
   function createSupabaseClient({ supabaseUrl, supabaseAnonKey, options }) {
-    if (!window.supabase) throw new Error("Supabase CDN not loaded (window.supabase missing).");
+    if (!window.supabase) {
+      throw new Error("Supabase CDN not loaded (window.supabase missing).");
+    }
+
     if (!supabaseUrl) throw new Error("Missing supabaseUrl.");
     if (!supabaseAnonKey) throw new Error("Missing supabaseAnonKey.");
 
-    // Keep defaults safe; override only via options
     const defaultOptions = {
       auth: {
         autoRefreshToken: true,
@@ -14,7 +16,6 @@
         detectSessionInUrl: true,
       },
       global: {
-        // Example: set extra headers if you want
         headers: {},
       },
     };
@@ -26,5 +27,7 @@
     );
   }
 
-  window.ShopUpSupabaseClientFactory = { createSupabaseClient };
+  window.ShopUpSupabaseClientFactory = {
+    createSupabaseClient,
+  };
 })();
