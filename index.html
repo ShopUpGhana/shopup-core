@@ -2,11 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ShopUp</title>
+
+    <!-- Fast redirect -->
     <meta http-equiv="refresh" content="0; url=./seller/register.html" />
+
+    <script>
+      // JS redirect fallback (some browsers ignore meta refresh)
+      window.location.replace("./seller/register.html");
+    </script>
   </head>
+
   <body>
-    Redirecting… <a href="./seller/register.html">Continue</a>
+    Redirecting... <a href="./seller/register.html">Continue</a>
   </body>
 </html>
