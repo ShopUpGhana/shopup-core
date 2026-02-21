@@ -1,33 +1,22 @@
+// /js/infra/supabase/supabaseClientFactory.js
 (function () {
   "use strict";
 
-  function createSupabaseClient({ supabaseUrl, supabaseAnonKey, options }) {
-    if (!window.supabase) {
-      throw new Error("Supabase CDN not loaded (window.supabase missing).");
+  function create() {
+    const cfg = window.ShopUpSupabaseConfig;
+    if (!cfg || !cfg.url || !cfg.anonKey) {
+      throw new Error("[ShopUp] Missing ShopUpSupabaseConfig (url/anonKey).");
+    }
+    if (!window.supabase || typeof window.supabase.createClient !== "function") {
+      throw new Error("[ShopUp] Supabase CDN not loaded.");
     }
 
-    if (!supabaseUrl) throw new Error("Missing supabaseUrl.");
-    if (!supabaseAnonKey) throw new Error("Missing supabaseAnonKey.");
-
-    const defaultOptions = {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true,
-      },
-      global: {
-        headers: {},
-      },
-    };
-
-    return window.supabase.createClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      Object.assign({}, defaultOptions, options || {})
-    );
+    return window.supabase.createClient(cfg.url, cfg.anonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    });
   }
 
   window.ShopUpSupabaseClientFactory = {
-    createSupabaseClient,
+    create,
   };
 })();
