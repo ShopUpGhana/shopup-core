@@ -8,26 +8,31 @@
     return;
   }
 
+  // One-time registration
   if (!c.__shopup_bootstrapped) {
     c.__shopup_bootstrapped = true;
 
     c.register("configReady", () => window.ShopUpConfigReady);
     c.register("config", () => window.ShopUpConfig);
 
-    // ✅ THIS is the key: authService will always await this before calling auth.getSession()
+    // ✅ Key: Always await Supabase readiness before any auth/session call
     c.register("supabaseWait", () => window.ShopUpSupabaseWait);
 
+    // Production-friendly logger later; for now ok
     c.register("logger", () => console);
 
+    // Auth Service
     c.register("authService", (cc) =>
       window.ShopUpAuthServiceFactory.createAuthService({
         logger: cc.resolve("logger"),
         supabaseWait: cc.resolve("supabaseWait"),
+        // ✅ Add role if your factory supports it
+        role: "seller",
       })
     );
   }
 
-  // Example usage:
+  // Example usage
   (async function init() {
     try {
       const auth = c.resolve("authService");
