@@ -4,18 +4,33 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ShopUp</title>
-
-    <!-- Fast redirect -->
-    <meta http-equiv="refresh" content="0; url=./seller/register.html" />
-
-    <script>
-      // JS redirect fallback (some browsers ignore meta refresh)
-      window.location.replace("./seller/register.html");
-    </script>
+    <title>ShopUp | Seller Login</title>
+    <link rel="stylesheet" href="../css/styles.css" />
   </head>
 
   <body>
-    Redirecting... <a href="./seller/register.html">Continue</a>
+    <!-- YOUR LOGIN FORM HTML HERE -->
+
+    <!-- ✅ 1) Supabase CDN FIRST -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- ✅ 2) DI container -->
+    <script src="../js/core/container.js"></script>
+
+    <!-- ✅ 3) Supabase factory -->
+    <script src="../js/infra/supabase/supabaseClientFactory.js"></script>
+
+    <!-- ✅ 4) Auth adapter + auth service -->
+    <script src="../js/adapters/supabaseAuthAdapter.js"></script>
+    <script src="../js/features/auth/authService.js"></script>
+
+    <!-- ✅ 5) Controller -->
+    <script src="../js/controllers/seller-login.controller.js"></script>
+
+    <!-- ✅ 6) Bootstrap for this page -->
+    <script src="../js/bootstrap/seller-login.bootstrap.js"></script>
+
+    <!-- ✅ 7) Page glue script LAST (only if it exists and is needed) -->
+    <script src="../js/services/seller-login.js"></script>
   </body>
 </html>
