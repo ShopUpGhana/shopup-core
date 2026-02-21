@@ -36,12 +36,12 @@
   );
 
   // ✅ auth service (feature)
-  c.register("authService", (cc) =>
-    window.ShopUpAuthService.create({
-      authAdapter: cc.resolve("authAdapter"),
-      role: "seller",
-    })
-  );
+  c.register("authAdapter", (cc) =>
+  window.ShopUpSupabaseAuthAdapter.create({
+    supabaseClientPromise: cc.resolve("supabaseClient"),
+    logger: console,
+  })
+);
 
   // ✅ controller init (if controller exposes init)
   if (
