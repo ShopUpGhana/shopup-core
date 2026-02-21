@@ -11,37 +11,21 @@
   if (c.__seller_login_bootstrapped) return;
   c.__seller_login_bootstrapped = true;
 
-  // ✅ Wait helper: resolves when Supabase exists
-  window.ShopUpSupabaseWait =
-    window.ShopUpSupabaseWait ||
-    (function () {
-      return new Promise((resolve, reject) => {
-        const start = Date.now();
-        const timeoutMs = 8000;
+  // ✅ Ensure supabase-config.js is loaded
+  if (typeof window.ShopUpSupabaseWait !== "function") {
+    console.error("[ShopUp] ShopUpSupabaseWait() missing. Did you load /js/supabase-config.js?");
+    return;
+  }
 
-        (function tick() {
-          try {
-            if (window.supabase && typeof window.supabase.createClient === "function") {
-              return resolve(true);
-            }
-            if (Date.now() - start > timeoutMs) {
-              return reject(new Error("Supabase CDN not loaded (timeout)."));
-            }
-            setTimeout(tick, 25);
-          } catch (e) {
-            reject(e);
-          }
-        })();
-      });
-    })();
-
-  // ✅ register supabaseWait so auth can safely await
+  // ✅ register supabaseWait as a FUNCTION that returns a Promise
   c.register("supabaseWait", () => window.ShopUpSupabaseWait);
 
-  // ✅ build supabase client using your factory
+  // ✅ build supabase client (returns the real client)
   c.register("supabaseClient", async () => {
-    await c.resolve("supabaseWait");
-    return window.ShopUpSupabaseClientFactory.create();
+    // IMPORTANT: call the function to get the Promise
+    const waitFn = c.resolve("supabaseWait");
+    const client = await waitFn(); // <- THIS is the fix
+    return client;
   });
 
   // ✅ adapters
@@ -60,7 +44,10 @@
   );
 
   // ✅ controller init (if controller exposes init)
-  if (window.ShopUpSellerLoginController && typeof window.ShopUpSellerLoginController.init === "function") {
+  if (
+    window.ShopUpSellerLoginController &&
+    typeof window.ShopUpSellerLoginController.init === "function"
+  ) {
     window.ShopUpSellerLoginController.init({ container: c });
   }
 })();
