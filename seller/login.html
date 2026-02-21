@@ -3,80 +3,19 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>ShopUp • Seller Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShopUp</title>
 
-    <!-- ✅ IMPORTANT: GitHub Pages base fix -->
-    <base href="../" />
+    <!-- Fast redirect -->
+    <meta http-equiv="refresh" content="0; url=./seller/register.html" />
 
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 24px; background:#0b1220; color:#e8eefc; }
-      .card { max-width: 520px; margin: 0 auto; background:#111a2e; border:1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 18px; }
-      h1 { font-size: 20px; margin: 0 0 12px; }
-      p { margin: 0 0 16px; opacity: .85; }
-      label { display:block; font-size: 12px; margin: 12px 0 6px; opacity:.9; }
-      input { width: 100%; padding: 10px 12px; border-radius: 10px; border:1px solid rgba(255,255,255,.12); background:#0b1220; color:#e8eefc; }
-      button { width: 100%; margin-top: 14px; padding: 12px 14px; border-radius: 10px; border:0; background:#2d6cff; color:white; font-weight:600; cursor:pointer; }
-      button:disabled { opacity:.6; cursor:not-allowed; }
-      .msg { margin-top: 12px; font-size: 13px; }
-      .hint { font-size: 12px; opacity:.75; margin-top:8px; }
-      a { color:#8ab4ff; }
-    </style>
+    <script>
+      // JS redirect fallback (some browsers ignore meta refresh)
+      window.location.replace("./seller/register.html");
+    </script>
   </head>
 
   <body>
-    <div class="card">
-      <h1>Seller Login</h1>
-      <p>Welcome back. Sign in to continue.</p>
-
-      <form id="sellerLoginForm">
-        <label for="email">Email *</label>
-        <input id="email" name="email" type="email" placeholder="you@email.com" required />
-
-        <label for="password">Password *</label>
-        <input id="password" name="password" type="password" placeholder="••••••••" required />
-
-        <button id="submitBtn" type="submit">Sign in</button>
-        <div id="msg" class="msg"></div>
-      </form>
-
-      <div class="hint" style="margin-top:14px;">
-        New seller? <a href="seller/register.html">Create an account</a>
-      </div>
-    </div>
-
-    <!-- 1) Supabase SDK -->
-    <script src="js/vendor/supabase.js"></script>
-
-    <!-- 2) Config -->
-    <script src="js/supabase-config.js"></script>
-
-    <!-- 3) Core DI -->
-    <script src="js/core/container.js"></script>
-    <script src="js/core/result.js"></script>
-
-    <!-- 4) Adapters + services -->
-    <script src="js/adapters/supabaseDbAdapter.js"></script>
-    <script src="js/adapters/supabaseAuthAdapter.js"></script>
-    <script src="js/features/seller/sellerService.js"></script>
-    <script src="js/features/auth/authService.js"></script>
-
-    <!-- 5) App bootstrap -->
-    <script src="js/bootstrap/app.bootstrap.js"></script>
-
-    <!-- 6) Controller + page bootstrap -->
-    <script src="js/controllers/seller-login.controller.js"></script>
-    <script src="js/bootstrap/seller-login.bootstrap.js"></script>
-
-    <!-- Loader sanity check -->
-    <script>
-      console.log("[ShopUp] Loaded objects:", {
-        ShopUpContainer: !!window.ShopUpContainer,
-        ShopUpConfig: !!window.ShopUpConfig,
-        ShopUpSupabaseAuthAdapter: !!window.ShopUpSupabaseAuthAdapter,
-        ShopUpAuthService: !!window.ShopUpAuthService,
-        supabaseSDK: !!window.supabase,
-      });
-    </script>
+    Redirecting... <a href="./seller/register.html">Continue</a>
   </body>
 </html>
