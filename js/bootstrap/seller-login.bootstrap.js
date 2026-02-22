@@ -1,53 +1,64 @@
-// /js/bootstrap/seller-login.bootstrap.js
+// /js/adapters/supabaseAuthAdapter.js
 (function () {
   "use strict";
 
-  const c = window.ShopUpContainer;
-  if (!c) {
-    console.error("[ShopUp] Container not found. Check script order.");
-    return;
+  function create({ supabase, supabaseClientPromise, logger }) {
+    logger = logger || console;
+
+    // Memoized lazy client getter (prevents race conditions + avoids duplicate creation)
+    let _clientPromise = null;
+
+    function getClient() {
+      if (supabase && supabase.auth) return Promise.resolve(supabase);
+
+      if (supabaseClientPromise) {
+        if (!_clientPromise) _clientPromise = Promise.resolve(supabaseClientPromise);
+        return _clientPromise.then((c) => {
+          if (!c || !c.auth) {
+            throw new Error("[ShopUp] supabaseAuthAdapter: invalid supabase client from supabaseClientPromise.");
+          }
+          return c;
+        });
+      }
+
+      return Promise.reject(
+        new Error("[ShopUp] supabaseAuthAdapter: provide either { supabase } or { supabaseClientPromise }.")
+      );
+    }
+
+    async function signInWithPassword({ email, password }) {
+      const client = await getClient();
+      return await client.auth.signInWithPassword({ email, password });
+    }
+
+    async function signOut() {
+      const client = await getClient();
+      return await client.auth.signOut();
+    }
+
+    async function getSession() {
+      const client = await getClient();
+      return await client.auth.getSession();
+    }
+
+    async function getUser() {
+      const client = await getClient();
+      return await client.auth.getUser();
+    }
+
+    async function onAuthStateChange(cb) {
+      const client = await getClient();
+      return client.auth.onAuthStateChange((event, session) => {
+        try {
+          cb(event, session);
+        } catch (e) {
+          logger?.error?.("[ShopUp] onAuthStateChange callback error", e);
+        }
+      });
+    }
+
+    return { signInWithPassword, signOut, getSession, getUser, onAuthStateChange };
   }
 
-  if (c.__seller_login_bootstrapped) return;
-  c.__seller_login_bootstrapped = true;
-
-  // ✅ Ensure supabase-config.js is loaded
-  if (typeof window.ShopUpSupabaseWait !== "function") {
-    console.error("[ShopUp] ShopUpSupabaseWait() missing. Did you load /js/supabase-config.js?");
-    return;
-  }
-
-  // ✅ register supabaseWait as a FUNCTION that returns a Promise
-  c.register("supabaseWait", () => window.ShopUpSupabaseWait);
-
-  // ✅ build supabase client (returns the real client)
-  c.register("supabaseClient", async () => {
-    // IMPORTANT: call the function to get the Promise
-    const waitFn = c.resolve("supabaseWait");
-    const client = await waitFn(); // <- THIS is the fix
-    return client;
-  });
-
-  // ✅ adapters
-  c.register("authAdapter", (cc) =>
-    window.ShopUpSupabaseAuthAdapter.create({
-      supabaseClientPromise: cc.resolve("supabaseClient"),
-    })
-  );
-
-  // ✅ auth service (feature)
-  c.register("authAdapter", (cc) =>
-  window.ShopUpSupabaseAuthAdapter.create({
-    supabaseClientPromise: cc.resolve("supabaseClient"),
-    logger: console,
-  })
-);
-
-  // ✅ controller init (if controller exposes init)
-  if (
-    window.ShopUpSellerLoginController &&
-    typeof window.ShopUpSellerLoginController.init === "function"
-  ) {
-    window.ShopUpSellerLoginController.init({ container: c });
-  }
+  window.ShopUpSupabaseAuthAdapter = { create };
 })();
