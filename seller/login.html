@@ -17,23 +17,26 @@
     <!-- ✅ 2) DI container -->
     <script src="../js/core/container.js"></script>
 
-    <!-- ✅ 3) Supabase config + wait helper + creates ShopUpSupabaseClient -->
+    <!-- ✅ 3) Logger (NEW - before bootstrap) -->
+    <script src="../js/core/logger.js"></script>
+
+    <!-- ✅ 4) Supabase config -->
     <script src="../js/supabase-config.js"></script>
 
-    <!-- ✅ 4) Supabase factory (optional; only keep if other modules require it) -->
+    <!-- ✅ 5) Supabase factory -->
     <script src="../js/infra/supabase/supabaseClientFactory.js"></script>
 
-    <!-- ✅ 5) Auth adapter + auth service -->
+    <!-- ✅ 6) Auth adapter + auth service -->
     <script src="../js/adapters/supabaseAuthAdapter.js"></script>
     <script src="../js/features/auth/authService.js"></script>
 
-    <!-- ✅ 6) Controller -->
+    <!-- ✅ 7) Controller -->
     <script src="../js/controllers/seller-login.controller.js"></script>
 
-    <!-- ✅ 7) Bootstrap for this page -->
+    <!-- ✅ 8) Bootstrap for this page -->
     <script src="../js/bootstrap/seller-login.bootstrap.js"></script>
 
-    <!-- ✅ 8) Page glue script LAST (only if it exists and is needed) -->
+    <!-- ✅ 9) Page glue script LAST (only if needed) -->
     <script src="../js/services/seller-login.js"></script>
   </body>
 </html>
