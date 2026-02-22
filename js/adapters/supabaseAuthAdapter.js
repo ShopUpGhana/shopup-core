@@ -2,42 +2,53 @@
 (function () {
   "use strict";
 
-  function create({ supabaseClientPromise, logger }) {
-    if (!supabaseClientPromise) {
-      throw new Error("[ShopUp] supabaseAuthAdapter: supabaseClientPromise not provided.");
-    }
+  function create({ supabase, supabaseClientPromise, logger }) {
+    logger = logger || console;
 
-    async function getClient() {
-      const client = await supabaseClientPromise;
-      if (!client || !client.auth) {
-        throw new Error("[ShopUp] Invalid Supabase client.");
+    // Memoized lazy client getter (prevents race conditions + avoids duplicate creation)
+    let _clientPromise = null;
+
+    function getClient() {
+      if (supabase && supabase.auth) return Promise.resolve(supabase);
+
+      if (supabaseClientPromise) {
+        if (!_clientPromise) _clientPromise = Promise.resolve(supabaseClientPromise);
+        return _clientPromise.then((c) => {
+          if (!c || !c.auth) {
+            throw new Error("[ShopUp] supabaseAuthAdapter: invalid supabase client from supabaseClientPromise.");
+          }
+          return c;
+        });
       }
-      return client;
+
+      return Promise.reject(
+        new Error("[ShopUp] supabaseAuthAdapter: provide either { supabase } or { supabaseClientPromise }.")
+      );
     }
 
     async function signInWithPassword({ email, password }) {
-      const supabase = await getClient();
-      return await supabase.auth.signInWithPassword({ email, password });
+      const client = await getClient();
+      return await client.auth.signInWithPassword({ email, password });
     }
 
     async function signOut() {
-      const supabase = await getClient();
-      return await supabase.auth.signOut();
+      const client = await getClient();
+      return await client.auth.signOut();
     }
 
     async function getSession() {
-      const supabase = await getClient();
-      return await supabase.auth.getSession();
+      const client = await getClient();
+      return await client.auth.getSession();
     }
 
     async function getUser() {
-      const supabase = await getClient();
-      return await supabase.auth.getUser();
+      const client = await getClient();
+      return await client.auth.getUser();
     }
 
     async function onAuthStateChange(cb) {
-      const supabase = await getClient();
-      return supabase.auth.onAuthStateChange((event, session) => {
+      const client = await getClient();
+      return client.auth.onAuthStateChange((event, session) => {
         try {
           cb(event, session);
         } catch (e) {
@@ -46,13 +57,7 @@
       });
     }
 
-    return {
-      signInWithPassword,
-      signOut,
-      getSession,
-      getUser,
-      onAuthStateChange,
-    };
+    return { signInWithPassword, signOut, getSession, getUser, onAuthStateChange };
   }
 
   window.ShopUpSupabaseAuthAdapter = { create };
