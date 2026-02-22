@@ -65,23 +65,6 @@
     })
   );
 
-  // ✅ Auto-redirect if already logged in as seller
-  (async function autoRedirectIfLoggedIn() {
-    const logger = c.resolve("logger");
-    try {
-      const auth = c.resolve("authService");
-
-      // Must be seller
-      const check = await auth.requireRole("seller");
-      if (check.ok) {
-        logger.info("Already logged in as seller. Redirecting...");
-        window.location.href = "../seller/dashboard.html";
-      }
-    } catch (e) {
-      // Silent fail: user not logged in yet
-    }
-  })();
-
   // Controller init
   if (
     window.ShopUpSellerLoginController &&
